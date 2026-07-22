@@ -165,3 +165,17 @@ Docker-Daemon Bind-Mounts auf dem Host auflöst.
 ## Nicht enthalten (Folgeauftrag)
 
 Der Paperclip-Adapter `claude_docker`, der `POST /run` konsumiert.
+
+## Lokaler MCP-Server (Claude Code & Co steuern die Container)
+
+`mcp/server.mjs` ist ein stdio-MCP-Server, der die Backend-API wrappt und in
+`.mcp.json` des Repos registriert ist. Jede Claude-Code-Session in diesem
+Projekt kann damit direkt Container verwalten:
+
+`list_containers`, `create_container`, `start_container`, `stop_container`,
+`run_agent` (Prompt in Container ausführen), `list_mcp_catalog`,
+`get/set_mcp_assignments`, `set_secret`, `list_secret_refs`.
+
+Setup: `cd mcp && npm install` — danach den Server beim nächsten
+Claude-Code-Start im Projekt genehmigen. Für andere Clients (Claude Desktop
+etc.): `node mcp/server.mjs` mit Env `AGENT_API_URL=http://localhost:8080`.

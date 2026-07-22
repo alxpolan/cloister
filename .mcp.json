@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "agent-containers": {
+      "command": "node",
+      "args": ["mcp/server.mjs"],
+      "env": {
+        "AGENT_API_URL": "http://localhost:8080"
+      }
+    }
+  }
+}
