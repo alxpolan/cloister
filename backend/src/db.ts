@@ -51,6 +51,11 @@ export async function migrate(): Promise<void> {
       PRIMARY KEY (container_id, catalog_id)
     );
   `);
+  await pool.query(`
+    ALTER TABLE containers ADD COLUMN IF NOT EXISTS icon bytea;
+    ALTER TABLE containers ADD COLUMN IF NOT EXISTS icon_mime text;
+    ALTER TABLE containers ADD COLUMN IF NOT EXISTS icon_updated_at timestamptz;
+  `);
   await seedCatalog();
 }
 

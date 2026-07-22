@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { Duplex } from "node:stream";
 import { docker, containerName } from "./docker.js";
 import { CONTAINER_WORKSPACE } from "./configgen.js";
+import { storeSecret } from "./crypto.js";
+import { pool } from "./db.js";
 
 /**
  * Interactive auth sessions: a TTY exec inside a tenant container whose
@@ -12,12 +14,43 @@ import { CONTAINER_WORKSPACE } from "./configgen.js";
 export interface AuthSession {
   id: string;
   containerId: string;
+  company: string;
   cli: "claude" | "codex";
   running: boolean;
   exitCode: number | null;
   createdAt: number;
   output: string;
   stream: Duplex;
+}
+
+export const CLAUDE_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN";
+
+/**
+ * `claude setup-token` only PRINTS the long-lived token — it does not persist
+ * anything. Capture it from the session output, store it encrypted and wire
+ * it up as an env injection so `claude` in this container is authenticated
+ * from the next start / next /run exec on.
+ */
+async function captureClaudeToken(session: AuthSession): Promise<void> {
+  const match = session.output.match(/sk-ant-oat[A-Za-z0-9_-]{20,}/);
+  if (!match) return;
+  const token = match[0];
+  const ref = `${session.company}-claude-code-oauth`;
+  await storeSecret(ref, token);
+  await pool.query(
+    "DELETE FROM accounts WHERE container_id = $1 AND env_var = $2",
+    [session.containerId, CLAUDE_TOKEN_ENV]
+  );
+  await pool.query(
+    `INSERT INTO accounts (container_id, type, label, role, env_var, secret_ref)
+     VALUES ($1, 'claude-code', 'OAuth token', 'auth', $2, $3)`,
+    [session.containerId, CLAUDE_TOKEN_ENV, ref]
+  );
+  // never keep the plaintext token in the session buffer
+  session.output =
+    session.output.replaceAll(token, "sk-ant-oat…(captured)") +
+    `\n\n[agents] Token captured and stored encrypted as secret '${ref}'.` +
+    `\n[agents] It is injected automatically as ${CLAUDE_TOKEN_ENV} — Claude Code is ready to use.`;
 }
 
 const sessions = new Map<string, AuthSession>();
@@ -65,6 +98,7 @@ export async function createAuthSession(
   const session: AuthSession = {
     id: randomUUID(),
     containerId,
+    company,
     cli,
     running: true,
     exitCode: null,
@@ -83,6 +117,11 @@ export async function createAuthSession(
       session.exitCode = (await exec.inspect()).ExitCode ?? null;
     } catch {
       session.exitCode = null;
+    }
+    if (session.cli === "claude") {
+      await captureClaudeToken(session).catch((err) =>
+        console.error("token capture failed:", err)
+      );
     }
   };
   stream.on("end", finish);
@@ -109,7 +148,20 @@ export function sessionView(s: AuthSession) {
 
 export function writeToSession(s: AuthSession, text: string): void {
   if (!s.running) throw new Error("session is not running");
-  s.stream.write(text.endsWith("\n") ? text : text + "\n");
+  // Raw-TTY input handling (Ink): Enter is "\r", and it must arrive as its
+  // own stdin chunk — a long paste with "\r" in the same chunk is treated
+  // as pasted text and never submits. Write the text first, then the CR
+  // separately after a short delay.
+  const clean = text.replace(/\r?\n+$/, "");
+  if (clean.length > 0) s.stream.write(clean);
+  setTimeout(() => {
+    if (!s.running) return;
+    try {
+      s.stream.write("\r");
+    } catch {
+      /* stream already gone */
+    }
+  }, 150);
 }
 
 export function killSession(s: AuthSession): void {
@@ -121,6 +173,11 @@ export function killSession(s: AuthSession): void {
     }
     s.stream.destroy();
     s.running = false;
+  }
+  // the user may close the dialog right after the token was printed —
+  // still try to salvage it
+  if (s.cli === "claude") {
+    captureClaudeToken(s).catch(() => {});
   }
   sessions.delete(s.id);
 }

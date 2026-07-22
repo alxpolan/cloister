@@ -182,7 +182,7 @@ private struct ContainerRow: View {
 
     var body: some View {
         HStack(spacing: 9) {
-            CompanyAvatar(name: container.name)
+            ContainerIcon(container: container)
                 .overlay(alignment: .bottomTrailing) {
                     Circle()
                         .fill(container.isRunning ? Color.green : Color.secondary.opacity(0.4))

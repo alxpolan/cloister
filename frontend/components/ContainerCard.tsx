@@ -11,7 +11,7 @@ import {
   Terminal,
   Trash2,
 } from "lucide-react";
-import type { Container } from "@/lib/api";
+import { API_URL, type Container } from "@/lib/api";
 import { Button, StatusDot } from "./ui";
 
 export function platformIcon(type: string, size = 14) {
@@ -54,6 +54,14 @@ export function ContainerCard({
         <div>
           <div className="flex items-center gap-2">
             <StatusDot running={running} />
+            {container.hasIcon && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={`${API_URL}/containers/${container.id}/icon?v=${container.iconVersion}`}
+                alt=""
+                className="h-5 w-5 rounded object-cover"
+              />
+            )}
             <h3 className="text-sm font-semibold">{container.name}</h3>
           </div>
           <p className="mt-0.5 font-mono text-xs text-neutral-400">

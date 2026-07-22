@@ -66,6 +66,28 @@ struct APIClient: Sendable {
         let _: OkResponse = try await request("containers/\(id)", method: "DELETE")
     }
 
+    // MARK: container icons
+
+    func iconURL(_ containerID: String, version: Double?) -> URL {
+        var url = baseURL.appendingPathComponent("containers/\(containerID)/icon")
+        if let version, version > 0 {
+            url.append(queryItems: [URLQueryItem(name: "v", value: String(Int(version)))])
+        }
+        return url
+    }
+
+    func uploadIcon(_ containerID: String, data: Data, mime: String) async throws {
+        struct Payload: Encodable { let data: String, mime: String }
+        let _: OkResponse = try await request(
+            "containers/\(containerID)/icon", method: "PUT",
+            body: encode(Payload(data: data.base64EncodedString(), mime: mime))
+        )
+    }
+
+    func deleteIcon(_ containerID: String) async throws {
+        let _: OkResponse = try await request("containers/\(containerID)/icon", method: "DELETE")
+    }
+
     // MARK: catalog & assignments
 
     func listCatalog() async throws -> [CatalogEntry] {

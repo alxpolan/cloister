@@ -80,3 +80,25 @@ struct CompanyAvatar: View {
             }
     }
 }
+
+/// Container icon: uploaded image when present, colored initial otherwise.
+struct ContainerIcon: View {
+    let container: AgentContainer
+    var size: CGFloat = 26
+
+    var body: some View {
+        Group {
+            if container.hasIcon == true {
+                AsyncImage(url: APIClient().iconURL(container.id, version: container.iconVersion)) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    CompanyAvatar(name: container.name, size: size)
+                }
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: size * 0.24, style: .continuous))
+            } else {
+                CompanyAvatar(name: container.name, size: size)
+            }
+        }
+    }
+}

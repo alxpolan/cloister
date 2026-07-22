@@ -22,6 +22,7 @@ export function AuthModal({
   const [note, setNote] = useState("");
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
+  const [succeeded, setSucceeded] = useState(false);
   const sidRef = useRef<string | null>(null);
   const preRef = useRef<HTMLPreElement>(null);
 
@@ -39,7 +40,17 @@ export function AuthModal({
           try {
             const s = await api.getAuthSession(sessionId);
             setSession(s);
-            if (!s.running && timer) clearInterval(timer);
+            if (!s.running && timer) {
+              clearInterval(timer);
+              if (s.exitCode === 0) {
+                setSucceeded(true);
+                onDone();
+                setTimeout(() => {
+                  sidRef.current = null;
+                  onClose();
+                }, 1800);
+              }
+            }
           } catch {
             if (timer) clearInterval(timer);
           }
@@ -80,6 +91,28 @@ export function AuthModal({
   function close() {
     onDone();
     onClose();
+  }
+
+  if (succeeded) {
+    return (
+      <Modal
+        title={`${cli === "claude" ? "Claude Code" : "Codex"} login — ${container.name}`}
+        onClose={close}
+        wide
+      >
+        <div className="flex flex-col items-center gap-3 py-14">
+          <svg viewBox="0 0 24 24" className="h-12 w-12 fill-emerald-500">
+            <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm-1.2 14.5-4-4 1.4-1.4 2.6 2.6 5.8-5.8 1.4 1.4-7.2 7.2Z" />
+          </svg>
+          <p className="text-sm font-semibold">Login successful</p>
+          <p className="text-xs text-neutral-500">
+            {cli === "claude"
+              ? "Token captured and stored securely — Claude Code is ready."
+              : "Codex is authenticated."}
+          </p>
+        </div>
+      </Modal>
+    );
   }
 
   return (

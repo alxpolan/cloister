@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Container detail (right pane): Info / MCPs tabs
 
@@ -63,13 +64,16 @@ struct ContainerDetail: View {
 private struct ContainerInfoForm: View {
     let container: AgentContainer
     let onLogin: (String) -> Void
+    @EnvironmentObject private var model: AppModel
+    @State private var showIconPicker = false
+    @State private var iconError = ""
 
     var body: some View {
         Form {
             Section {
                 LabeledContent("Name") {
                     HStack(spacing: 8) {
-                        CompanyAvatar(name: container.name, size: 20)
+                        ContainerIcon(container: container, size: 20)
                         Text(container.name)
                     }
                 }
@@ -86,6 +90,28 @@ private struct ContainerInfoForm: View {
                                 (container.isRunning ? Color.green : Color.secondary).opacity(0.15)
                             )
                         )
+                }
+            }
+
+            Section("Icon") {
+                LabeledContent("Custom Icon") {
+                    HStack(spacing: 10) {
+                        ContainerIcon(container: container, size: 32)
+                        Button("Choose…") { showIconPicker = true }
+                            .controlSize(.small)
+                        if container.hasIcon == true {
+                            Button("Remove") {
+                                Task {
+                                    try? await model.api.deleteIcon(container.id)
+                                    await model.refresh()
+                                }
+                            }
+                            .controlSize(.small)
+                        }
+                    }
+                }
+                if !iconError.isEmpty {
+                    Text(iconError).font(.caption).foregroundStyle(.red)
                 }
             }
 
@@ -123,6 +149,61 @@ private struct ContainerInfoForm: View {
             }
         }
         .formStyle(.grouped)
+        .fileImporter(
+            isPresented: $showIconPicker,
+            allowedContentTypes: [.image]
+        ) { result in
+            switch result {
+            case .success(let url):
+                uploadIcon(from: url)
+            case .failure(let err):
+                iconError = err.localizedDescription
+            }
+        }
+    }
+
+    private func uploadIcon(from url: URL) {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let png = resizedPNG(from: url, maxDimension: 256) else {
+            iconError = "Could not read that image."
+            return
+        }
+        Task {
+            do {
+                try await model.api.uploadIcon(container.id, data: png, mime: "image/png")
+                await model.refresh()
+                iconError = ""
+            } catch {
+                iconError = error.localizedDescription
+            }
+        }
+    }
+
+    private func resizedPNG(from url: URL, maxDimension: CGFloat) -> Data? {
+        guard let image = NSImage(contentsOf: url), image.size.width > 0, image.size.height > 0 else {
+            return nil
+        }
+        let ratio = min(1, maxDimension / max(image.size.width, image.size.height))
+        let target = NSSize(width: max(1, image.size.width * ratio), height: max(1, image.size.height * ratio))
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(target.width),
+            pixelsHigh: Int(target.height),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else { return nil }
+        rep.size = target
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        image.draw(in: NSRect(origin: .zero, size: target), from: .zero, operation: .copy, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
+        return rep.representation(using: .png, properties: [:])
     }
 
     private func cliRow(name: String, cli: String, ok: Bool) -> some View {

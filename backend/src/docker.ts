@@ -51,7 +51,7 @@ export async function dockerState(
  * account that has a secret assigned. Plaintext exists only in this call
  * chain and inside the target container — never on disk, never in the DB.
  */
-async function resolveEnv(containerId: string): Promise<string[]> {
+export async function resolveEnv(containerId: string): Promise<string[]> {
   const { rows } = await pool.query<AccountRow>(
     "SELECT * FROM accounts WHERE container_id = $1",
     [containerId]
@@ -69,14 +69,52 @@ async function resolveEnv(containerId: string): Promise<string[]> {
   return env;
 }
 
+/**
+ * Full env for a tenant: account-based injections plus catalog MCP bindings;
+ * bindings win on name clash. Used at container start AND per /run exec, so
+ * freshly captured tokens work without a restart.
+ */
+export async function resolveAllEnv(containerId: string): Promise<string[]> {
+  const accountEnv = await resolveEnv(containerId);
+  const bindingEnv = await resolveBindingEnv(containerId);
+  const merged = new Map(
+    [...accountEnv, ...bindingEnv].map((e) => {
+      const i = e.indexOf("=");
+      return [e.slice(0, i), e] as const;
+    })
+  );
+  return [...merged.values()];
+}
+
 export interface StartOptions {
   /**
-   * Publish container port 1455 to host port 1455 for the duration of a
-   * Codex ChatGPT login: codex's OAuth redirect goes to localhost:1455,
-   * which must reach the callback server inside the container. Only one
-   * container can hold the port at a time; a normal restart drops it.
+   * Publish a path for the Codex ChatGPT login callback. codex binds its
+   * OAuth callback server to 127.0.0.1:1455 INSIDE the container, which a
+   * published port cannot reach directly — so we publish host 1455 to
+   * container port 1456 and run a tiny node TCP proxy in the container
+   * (0.0.0.0:1456 → 127.0.0.1:1455). Only one container can hold the host
+   * port at a time; a normal restart drops both port and proxy.
    */
   codexAuthPort?: boolean;
+}
+
+const CODEX_PROXY_JS =
+  'const net=require("net");' +
+  'net.createServer(s=>{const c=net.connect(1455,"127.0.0.1");' +
+  's.pipe(c);c.pipe(s);' +
+  's.on("error",()=>c.destroy());c.on("error",()=>s.destroy());})' +
+  '.listen(1456,"0.0.0.0");';
+
+/** Detached in-container bridge for the codex login callback. */
+export async function startCodexAuthProxy(company: string): Promise<void> {
+  const container = docker.getContainer(containerName(company));
+  const exec = await container.exec({
+    Cmd: ["node", "-e", CODEX_PROXY_JS],
+    User: "node",
+    AttachStdout: false,
+    AttachStderr: false,
+  });
+  await exec.start({ Detach: true });
 }
 
 /**
@@ -94,17 +132,7 @@ export async function startContainer(row: ContainerRow, opts: StartOptions = {})
     if (err.statusCode !== 404) throw err;
   }
 
-  // account-based env plus env required by assigned catalog MCPs; the
-  // latter wins on name clash
-  const accountEnv = await resolveEnv(row.id);
-  const bindingEnv = await resolveBindingEnv(row.id);
-  const merged = new Map(
-    [...accountEnv, ...bindingEnv].map((e) => {
-      const i = e.indexOf("=");
-      return [e.slice(0, i), e] as const;
-    })
-  );
-  const env = [...merged.values()];
+  const env = await resolveAllEnv(row.id);
   const created = await docker.createContainer({
     name,
     Image: config.agentImage,
@@ -116,13 +144,13 @@ export async function startContainer(row: ContainerRow, opts: StartOptions = {})
       "agent-containers.company": row.company,
       "agent-containers.id": row.id,
     },
-    ...(opts.codexAuthPort ? { ExposedPorts: { "1455/tcp": {} } } : {}),
+    ...(opts.codexAuthPort ? { ExposedPorts: { "1456/tcp": {} } } : {}),
     HostConfig: {
       Binds: [`${hostHomePath(row.company)}:/home/node`],
       // Deliberately NO docker socket, no extra privileges.
       RestartPolicy: { Name: "unless-stopped" },
       ...(opts.codexAuthPort
-        ? { PortBindings: { "1455/tcp": [{ HostIp: "127.0.0.1", HostPort: "1455" }] } }
+        ? { PortBindings: { "1456/tcp": [{ HostIp: "127.0.0.1", HostPort: "1455" }] } }
         : {}),
     },
   });
@@ -161,7 +189,8 @@ export interface ExecResult {
 export async function execInContainer(
   company: string,
   cmd: string[],
-  timeoutMs = 15 * 60 * 1000
+  timeoutMs = 15 * 60 * 1000,
+  extraEnv: string[] = []
 ): Promise<ExecResult> {
   const container = docker.getContainer(containerName(company));
   const exec = await container.exec({
@@ -170,7 +199,7 @@ export async function execInContainer(
     AttachStderr: true,
     User: "node",
     WorkingDir: CONTAINER_WORKSPACE,
-    Env: ["HOME=/home/node"],
+    Env: ["HOME=/home/node", ...extraEnv],
   });
 
   const stream = await exec.start({ hijack: true, stdin: false });

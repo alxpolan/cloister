@@ -59,6 +59,8 @@ struct AgentContainer: Codable, Identifiable, Hashable {
     let codexAuthenticated: Bool
     let mcps: [McpSummary]
     let mcpConfigJson: McpConfigJson?
+    let hasIcon: Bool?
+    let iconVersion: Double?
 
     var isRunning: Bool { status == "running" }
     var customServerCount: Int { mcpConfigJson?.mcpServers?.count ?? 0 }
@@ -66,6 +68,7 @@ struct AgentContainer: Codable, Identifiable, Hashable {
     enum CodingKeys: String, CodingKey {
         case id, name, company, status, claudeAuthenticated, codexAuthenticated, mcps
         case mcpConfigJson = "mcp_config_json"
+        case hasIcon, iconVersion
     }
 }
 

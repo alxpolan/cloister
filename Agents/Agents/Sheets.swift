@@ -193,6 +193,7 @@ struct AuthSheet: View {
     @State private var state: AuthSessionState?
     @State private var input = ""
     @State private var error = ""
+    @State private var succeeded = false
 
     private var authURL: URL? {
         guard let output = state?.output else { return nil }
@@ -208,6 +209,35 @@ struct AuthSheet: View {
     }
 
     var body: some View {
+        Group {
+            if succeeded {
+                successView
+            } else {
+                terminalView
+            }
+        }
+        .frame(width: 640)
+        .task { await run() }
+    }
+
+    private var successView: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 52))
+                .foregroundStyle(.green)
+            Text("Login Successful")
+                .font(.title2.weight(.semibold))
+            Text(cli == "claude"
+                 ? "Token captured and stored securely — Claude Code is ready to use."
+                 : "Codex is authenticated for \(container.name).")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 70)
+    }
+
+    private var terminalView: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("\(cli == "claude" ? "Claude Code" : "Codex") Login — \(container.name)")
@@ -247,12 +277,12 @@ struct AuthSheet: View {
                     .foregroundStyle(.secondary)
             }
             HStack(spacing: 8) {
-                TextField("Paste code / answer here, ⏎ to send", text: $input)
+                TextField("Paste code / answer here, ⏎ to send (empty = just Enter)", text: $input)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { send() }
                     .disabled(state?.running != true)
                 Button("Send") { send() }
-                    .disabled(state?.running != true || input.isEmpty)
+                    .disabled(state?.running != true)
             }
             if !error.isEmpty {
                 Text(error).font(.caption).foregroundStyle(.red)
@@ -264,8 +294,6 @@ struct AuthSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 640)
-        .task { await run() }
     }
 
     private func run() async {
@@ -280,13 +308,20 @@ struct AuthSheet: View {
                 if !s.running { break }
                 try? await Task.sleep(for: .seconds(1))
             }
+            // ended cleanly → show success and close on our own
+            if state?.exitCode == 0 {
+                withAnimation { succeeded = true }
+                await model.refresh()
+                try? await Task.sleep(for: .seconds(1.8))
+                close()
+            }
         } catch {
             self.error = error.localizedDescription
         }
     }
 
     private func send() {
-        guard let sid = sessionID, !input.isEmpty else { return }
+        guard let sid = sessionID else { return }
         let text = input
         input = ""
         Task {

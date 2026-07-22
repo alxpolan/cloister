@@ -30,6 +30,8 @@ export interface Container {
   codexAuthenticated: boolean;
   accounts: Account[];
   mcps: McpSummary[];
+  hasIcon: boolean;
+  iconVersion: number;
 }
 
 export interface CatalogEntry {

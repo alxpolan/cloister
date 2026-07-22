@@ -5,9 +5,12 @@ import {
   dockerState,
   execInContainer,
   removeContainer,
+  resolveAllEnv,
+  startCodexAuthProxy,
   startContainer,
   stopContainer,
 } from "./docker.js";
+import { CLAUDE_TOKEN_ENV } from "./authsessions.js";
 import { authStatus, ensureHomeDir } from "./configgen.js";
 import { deleteSecret, listSecretRefs, storeSecret } from "./crypto.js";
 import { hostHomePath } from "./config.js";
@@ -33,18 +36,30 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // ---------- containers ----------
 
   app.get("/containers", async () => {
-    const { rows } = await pool.query<ContainerRow>(
-      "SELECT * FROM containers ORDER BY created_at"
+    const { rows } = await pool.query<ContainerRow & { has_icon: boolean; icon_version: number }>(
+      `SELECT id, name, company, status, home_path, mcp_config_json, created_at,
+              (icon IS NOT NULL) AS has_icon,
+              COALESCE(extract(epoch FROM icon_updated_at), 0)::bigint AS icon_version
+       FROM containers ORDER BY created_at`
     );
     const { rows: accounts } = await pool.query<AccountRow>(
       "SELECT * FROM accounts ORDER BY created_at"
     );
+    // containers with a captured setup-token (env-injected auth)
+    const { rows: tokenRows } = await pool.query<{ container_id: string }>(
+      `SELECT a.container_id FROM accounts a
+       JOIN secrets s ON s.ref = a.secret_ref
+       WHERE a.env_var = $1`,
+      [CLAUDE_TOKEN_ENV]
+    );
+    const tokenAuth = new Set(tokenRows.map((r) => r.container_id));
     return Promise.all(
       rows.map(async (c) => {
         const [state, auth] = await Promise.all([
           dockerState(c.company),
           authStatus(c.company),
         ]);
+        auth.claude = auth.claude || tokenAuth.has(c.id);
         const status = state === "running" ? "running" : "stopped";
         if (status !== c.status) {
           await pool.query("UPDATE containers SET status = $1 WHERE id = $2", [
@@ -59,6 +74,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
           codexAuthenticated: auth.codex,
           accounts: accounts.filter((a) => a.container_id === c.id),
           mcps: await assignmentSummary(c.id),
+          hasIcon: c.has_icon,
+          iconVersion: Number(c.icon_version),
         };
       })
     );
@@ -127,6 +144,50 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return { ok: true, container: rows[0], note: "applies on next start" };
     }
   );
+
+  // ---------- container icons ----------
+
+  app.get<{ Params: { id: string } }>("/containers/:id/icon", async (req, reply) => {
+    const { rows } = await pool.query(
+      "SELECT icon, icon_mime FROM containers WHERE id = $1",
+      [req.params.id]
+    );
+    if (!rows[0]?.icon) return reply.code(404).send({ error: "no icon" });
+    return reply
+      .header("Cache-Control", "public, max-age=31536000, immutable")
+      .type(rows[0].icon_mime ?? "image/png")
+      .send(rows[0].icon);
+  });
+
+  app.put<{ Params: { id: string }; Body: { data: string; mime: string } }>(
+    "/containers/:id/icon",
+    { bodyLimit: 8 * 1024 * 1024 },
+    async (req, reply) => {
+      const { data, mime } = req.body ?? ({} as any);
+      if (!data || !mime?.startsWith("image/")) {
+        return reply.code(400).send({ error: "body must be { data: <base64>, mime: image/* }" });
+      }
+      const buf = Buffer.from(data, "base64");
+      if (buf.length === 0 || buf.length > 2 * 1024 * 1024) {
+        return reply.code(400).send({ error: "icon must be between 1 byte and 2 MB" });
+      }
+      const { rowCount } = await pool.query(
+        "UPDATE containers SET icon = $1, icon_mime = $2, icon_updated_at = now() WHERE id = $3",
+        [buf, mime, req.params.id]
+      );
+      if (!rowCount) return reply.code(404).send({ error: "not found" });
+      return { ok: true };
+    }
+  );
+
+  app.delete<{ Params: { id: string } }>("/containers/:id/icon", async (req, reply) => {
+    const { rowCount } = await pool.query(
+      "UPDATE containers SET icon = NULL, icon_mime = NULL, icon_updated_at = now() WHERE id = $1",
+      [req.params.id]
+    );
+    if (!rowCount) return reply.code(404).send({ error: "not found" });
+    return { ok: true };
+  });
 
   // ---------- MCP catalog & assignments ----------
 
@@ -325,6 +386,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       // claude setup-token is pure URL + paste-back, no port needed.
       if (cli === "codex") {
         await startContainer(row, { codexAuthPort: true });
+        await startCodexAuthProxy(row.company);
       } else if ((await dockerState(row.company)) !== "running") {
         return reply.code(409).send({ error: "container must be running; start it first" });
       }
@@ -353,9 +415,10 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       const s = getSession(req.params.sid);
       if (!s) return reply.code(404).send({ error: "unknown session" });
       const text = req.body?.text;
-      if (typeof text !== "string" || text.length === 0) {
+      if (typeof text !== "string") {
         return reply.code(400).send({ error: "body must be { text: string }" });
       }
+      // empty text = bare Enter (e.g. "Press Enter to retry")
       writeToSession(s, text);
       return { ok: true };
     }
@@ -396,7 +459,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         ? ["codex", "exec", "--skip-git-repo-check", prompt]
         : ["claude", "-p", prompt, "--output-format", "text", "--dangerously-skip-permissions"];
 
-    const result = await execInContainer(company, cmd, timeoutMs);
+    // resolve env per exec so freshly captured tokens apply without restart
+    const env = await resolveAllEnv(row.id);
+    const result = await execInContainer(company, cmd, timeoutMs, env);
     return {
       company,
       cli,
