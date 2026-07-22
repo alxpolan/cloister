@@ -67,7 +67,7 @@ export function ContainerCard({
   onStop: () => void;
   onEditMcp: () => void;
   onDelete: () => void;
-  onLogin: (cli: "claude" | "codex") => void;
+  onLogin: (cli: string) => void;
 }) {
   const running = container.status === "running";
   const customCount = Object.keys(container.mcp_config_json?.mcpServers ?? {}).length;
@@ -127,7 +127,20 @@ export function ContainerCard({
               <li key={m.key} className="flex items-center gap-2 text-xs">
                 <McpFavicon entryId={m.id} icon={m.icon} />
                 <span className="font-medium text-neutral-800">{m.label}</span>
-                {!m.secretsOk && (
+                {m.oauth && m.authorized !== true && (
+                  <span className="ml-auto flex items-center gap-2">
+                    <span className="text-amber-600">not authorized</span>
+                    {running && (
+                      <button
+                        onClick={() => onLogin(`mcp:${m.key}`)}
+                        className="text-neutral-400 underline decoration-neutral-300 underline-offset-2 hover:text-neutral-700"
+                      >
+                        authorize
+                      </button>
+                    )}
+                  </span>
+                )}
+                {!m.oauth && !m.secretsOk && (
                   <span className="ml-auto text-red-500">token missing</span>
                 )}
               </li>

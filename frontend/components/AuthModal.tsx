@@ -14,10 +14,14 @@ export function AuthModal({
   onDone,
 }: {
   container: Container;
-  cli: "claude" | "codex";
+  cli: string;
   onClose: () => void;
   onDone: () => void;
 }) {
+  const isMcp = cli.startsWith("mcp:");
+  const title = isMcp
+    ? `Authorize ${cli.slice(4)} — ${container.name}`
+    : `${cli === "claude" ? "Claude Code" : "Codex"} login — ${container.name}`;
   const [session, setSession] = useState<AuthSessionState | null>(null);
   const [note, setNote] = useState("");
   const [input, setInput] = useState("");
@@ -96,7 +100,7 @@ export function AuthModal({
   if (succeeded) {
     return (
       <Modal
-        title={`${cli === "claude" ? "Claude Code" : "Codex"} login — ${container.name}`}
+        title={title}
         onClose={close}
         wide
       >
@@ -104,11 +108,13 @@ export function AuthModal({
           <svg viewBox="0 0 24 24" className="h-12 w-12 fill-emerald-500">
             <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm-1.2 14.5-4-4 1.4-1.4 2.6 2.6 5.8-5.8 1.4 1.4-7.2 7.2Z" />
           </svg>
-          <p className="text-sm font-semibold">Login successful</p>
+          <p className="text-sm font-semibold">{isMcp ? "Authorization successful" : "Login successful"}</p>
           <p className="text-xs text-neutral-500">
-            {cli === "claude"
-              ? "Token captured and stored securely — Claude Code is ready."
-              : "Codex is authenticated."}
+            {isMcp
+              ? `Authorization stored — ${cli.slice(4)} is ready for autonomous runs.`
+              : cli === "claude"
+                ? "Token captured and stored securely — Claude Code is ready."
+                : "Codex is authenticated."}
           </p>
         </div>
       </Modal>
@@ -117,7 +123,7 @@ export function AuthModal({
 
   return (
     <Modal
-      title={`${cli === "claude" ? "Claude Code" : "Codex"} login — ${container.name}`}
+      title={title}
       onClose={close}
       wide
     >

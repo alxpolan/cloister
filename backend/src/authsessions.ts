@@ -1,20 +1,23 @@
 import { randomUUID } from "node:crypto";
 import type { Duplex } from "node:stream";
 import { docker, containerName } from "./docker.js";
-import { CONTAINER_WORKSPACE } from "./configgen.js";
+import { CONTAINER_WORKSPACE, mcpAuthorized } from "./configgen.js";
 import { storeSecret } from "./crypto.js";
 import { pool } from "./db.js";
+
+export type AuthSessionKind = "claude" | "codex" | "mcp";
 
 export interface AuthSession {
   id: string;
   containerId: string;
   company: string;
-  cli: "claude" | "codex";
+  cli: AuthSessionKind;
   running: boolean;
   exitCode: number | null;
   createdAt: number;
   output: string;
   stream: Duplex;
+  watcher?: ReturnType<typeof setInterval>;
 }
 
 export const CLAUDE_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN";
@@ -53,7 +56,7 @@ function stripAnsi(s: string): string {
 export async function createAuthSession(
   company: string,
   containerId: string,
-  cli: "claude" | "codex",
+  cli: AuthSessionKind,
   cmd: string[]
 ): Promise<AuthSession> {
   for (const s of sessions.values()) {
@@ -100,6 +103,7 @@ export async function createAuthSession(
     } catch {
       session.exitCode = null;
     }
+    if (session.watcher) clearInterval(session.watcher);
     if (session.cli === "claude") {
       await captureClaudeToken(session).catch((err) =>
         console.error("token capture failed:", err)
@@ -112,6 +116,27 @@ export async function createAuthSession(
   sessions.set(session.id, session);
   pruneSessions();
   return session;
+}
+
+export function attachMcpWatcher(session: AuthSession, serverUrl: string): void {
+  session.watcher = setInterval(async () => {
+    if (!session.running) {
+      if (session.watcher) clearInterval(session.watcher);
+      return;
+    }
+    if (await mcpAuthorized(session.company, serverUrl)) {
+      if (session.watcher) clearInterval(session.watcher);
+      session.output +=
+        "\n\n[agents] Authorization stored in the container home — this MCP server is ready for autonomous runs.";
+      session.running = false;
+      session.exitCode = 0;
+      try {
+        session.stream.write("\x03");
+      } catch {
+      }
+      session.stream.destroy();
+    }
+  }, 2000);
 }
 
 export function getSession(id: string): AuthSession | undefined {
@@ -142,6 +167,7 @@ export function writeToSession(s: AuthSession, text: string): void {
 }
 
 export function killSession(s: AuthSession): void {
+  if (s.watcher) clearInterval(s.watcher);
   if (s.running) {
     try {
       s.stream.write("\x03");

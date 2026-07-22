@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import * as TOML from "smol-toml";
@@ -35,9 +36,13 @@ async function writeMcpJson(
   servers: Record<string, unknown>
 ): Promise<void> {
   const file = path.join(localHomePath(container.company), "workspace", ".mcp.json");
+  const rendered: Record<string, unknown> = {};
+  for (const [name, def] of Object.entries(servers)) {
+    rendered[name] = effectiveDef(def as McpServerDef);
+  }
   await fs.writeFile(
     file,
-    JSON.stringify({ mcpServers: servers }, null, 2) + "\n",
+    JSON.stringify({ mcpServers: rendered }, null, 2) + "\n",
     "utf8"
   );
 }
@@ -78,13 +83,26 @@ function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
-interface McpServerDef {
+export interface McpServerDef {
   type?: string;
   url?: string;
   command?: string;
   args?: string[];
   env?: Record<string, string>;
   headers?: Record<string, string>;
+}
+
+export function isOAuthHttp(def: McpServerDef): boolean {
+  const hasUrl = Boolean(def.url) || def.type === "http" || def.type === "sse";
+  const auth = def.headers?.["Authorization"] ?? def.headers?.["authorization"];
+  return hasUrl && !auth;
+}
+
+function effectiveDef(def: McpServerDef): McpServerDef {
+  if (isOAuthHttp(def) && def.url) {
+    return { command: "mcp-remote", args: [def.url] };
+  }
+  return def;
 }
 
 function codexServer(def: McpServerDef): Record<string, unknown> {
@@ -130,7 +148,7 @@ async function writeCodexConfig(
 
   const mcpServers: Record<string, unknown> = {};
   for (const [name, def] of Object.entries(servers)) {
-    mcpServers[name] = codexServer(def as McpServerDef);
+    mcpServers[name] = codexServer(effectiveDef(def as McpServerDef));
   }
 
   const merged = {
@@ -185,4 +203,16 @@ async function fileExists(p: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export async function mcpAuthorized(company: string, serverUrl: string): Promise<boolean> {
+  const dir = path.join(localHomePath(company), ".mcp-auth");
+  const hash = createHash("md5").update(serverUrl).digest("hex");
+  try {
+    for (const entry of await fs.readdir(dir, { recursive: true, withFileTypes: true })) {
+      if (entry.isFile() && entry.name === `${hash}_tokens.json`) return true;
+    }
+  } catch {
+  }
+  return false;
 }

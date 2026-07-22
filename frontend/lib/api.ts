@@ -17,6 +17,8 @@ export interface McpSummary {
   label: string;
   icon: string;
   secretsOk: boolean;
+  oauth: boolean;
+  authorized: boolean | null;
 }
 
 export interface Container {
@@ -127,10 +129,11 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ assignments }),
     }),
-  startAuth: (id: string, cli: "claude" | "codex") =>
-    request<{ sessionId: string; note: string }>(`/containers/${id}/auth/${cli}`, {
-      method: "POST",
-    }),
+  startAuth: (id: string, cli: string) =>
+    request<{ sessionId: string; note: string }>(
+      `/containers/${id}/auth/${encodeURIComponent(cli)}`,
+      { method: "POST" }
+    ),
   getAuthSession: (sid: string) => request<AuthSessionState>(`/auth-sessions/${sid}`),
   sendAuthInput: (sid: string, text: string) =>
     request<{ ok: boolean }>(`/auth-sessions/${sid}/input`, {

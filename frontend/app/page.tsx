@@ -18,7 +18,7 @@ type ModalState =
   | { kind: "catalog" }
   | { kind: "mcps"; container: Container }
   | { kind: "mcp-raw"; container: Container }
-  | { kind: "auth"; container: Container; cli: "claude" | "codex" };
+  | { kind: "auth"; container: Container; cli: string };
 
 export default function Dashboard() {
   const [containers, setContainers] = useState<Container[] | null>(null);

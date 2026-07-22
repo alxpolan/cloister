@@ -1,5 +1,6 @@
 import { pool, type AssignmentRow, type ContainerRow } from "./db.js";
 import { readSecret } from "./crypto.js";
+import { isOAuthHttp, mcpAuthorized, type McpServerDef } from "./configgen.js";
 
 export async function getAssignments(containerId: string): Promise<AssignmentRow[]> {
   const { rows } = await pool.query<AssignmentRow>(
@@ -38,15 +39,34 @@ export async function resolveBindingEnv(containerId: string): Promise<string[]> 
   return env;
 }
 
-export async function assignmentSummary(containerId: string): Promise<
-  { id: string; key: string; label: string; icon: string; secretsOk: boolean }[]
+export async function assignmentSummary(
+  containerId: string,
+  company: string
+): Promise<
+  {
+    id: string;
+    key: string;
+    label: string;
+    icon: string;
+    secretsOk: boolean;
+    oauth: boolean;
+    authorized: boolean | null;
+  }[]
 > {
   const assignments = await getAssignments(containerId);
-  return assignments.map((a) => ({
-    id: a.id,
-    key: a.key,
-    label: a.label,
-    icon: a.icon,
-    secretsOk: (a.secrets_json ?? []).every((s) => Boolean(a.bindings_json?.[s.env])),
-  }));
+  return Promise.all(
+    assignments.map(async (a) => {
+      const def = a.config_json as McpServerDef;
+      const oauth = isOAuthHttp(def);
+      return {
+        id: a.id,
+        key: a.key,
+        label: a.label,
+        icon: a.icon,
+        secretsOk: (a.secrets_json ?? []).every((s) => Boolean(a.bindings_json?.[s.env])),
+        oauth,
+        authorized: oauth && def.url ? await mcpAuthorized(company, def.url) : null,
+      };
+    })
+  );
 }

@@ -44,6 +44,8 @@ struct McpSummary: Codable, Hashable, Identifiable {
     let label: String
     let icon: String
     let secretsOk: Bool
+    let oauth: Bool
+    let authorized: Bool?
 }
 
 struct McpConfigJson: Codable, Hashable {

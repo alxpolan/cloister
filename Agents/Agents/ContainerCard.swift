@@ -127,12 +127,28 @@ private struct ContainerInfoForm: View {
                 }
                 ForEach(container.mcps) { mcp in
                     LabeledContent {
-                        if mcp.secretsOk {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                        } else {
-                            Text("token missing")
-                                .foregroundStyle(.red)
+                        HStack(spacing: 10) {
+                            if mcp.oauth {
+                                if mcp.authorized == true {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.green)
+                                } else {
+                                    Text("not authorized")
+                                        .foregroundStyle(.orange)
+                                    if container.isRunning {
+                                        Button("Authorize…") {
+                                            onLogin("mcp:\(mcp.key)")
+                                        }
+                                        .controlSize(.small)
+                                    }
+                                }
+                            } else if mcp.secretsOk {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                            } else {
+                                Text("token missing")
+                                    .foregroundStyle(.red)
+                            }
                         }
                     } label: {
                         HStack(spacing: 8) {

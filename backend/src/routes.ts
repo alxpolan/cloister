@@ -21,12 +21,14 @@ import { authStatus, ensureHomeDir } from "./configgen.js";
 import { deleteSecret, listSecretRefs, storeSecret } from "./crypto.js";
 import { hostHomePath } from "./config.js";
 import {
+  attachMcpWatcher,
   createAuthSession,
   getSession,
   killSession,
   sessionView,
   writeToSession,
 } from "./authsessions.js";
+import { isOAuthHttp, type McpServerDef } from "./configgen.js";
 
 const COMPANY_RE = /^[a-z0-9][a-z0-9-]{1,40}$/;
 
@@ -95,7 +97,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
           claudeAuthenticated: auth.claude,
           codexAuthenticated: auth.codex,
           accounts: accounts.filter((a) => a.container_id === c.id),
-          mcps: await assignmentSummary(c.id),
+          mcps: await assignmentSummary(c.id, c.company),
           hasIcon: c.has_icon,
           iconVersion: Number(c.icon_version),
         };
@@ -449,8 +451,34 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       const row = await getContainerRow(req.params.id);
       if (!row) return reply.code(404).send({ error: "not found" });
       const cli = req.params.cli;
+
+      if (cli.startsWith("mcp:")) {
+        const key = cli.slice(4);
+        const assignments = await getAssignments(row.id);
+        const assignment = assignments.find((a) => a.key === key);
+        if (!assignment) {
+          return reply.code(404).send({ error: `MCP '${key}' is not assigned to this container` });
+        }
+        const def = assignment.config_json as McpServerDef;
+        if (!isOAuthHttp(def) || !def.url) {
+          return reply.code(400).send({ error: `MCP '${key}' uses token auth, nothing to authorize` });
+        }
+        await startContainer(row, { codexAuthPort: true });
+        await startCodexAuthProxy(row.company);
+        const session = await createAuthSession(row.company, row.id, "mcp", [
+          "mcp-remote",
+          def.url,
+          "1455",
+        ]);
+        attachMcpWatcher(session, def.url);
+        return reply.code(201).send({
+          sessionId: session.id,
+          note: `open the authorization URL in your browser; the session finishes on its own once the token is stored`,
+        });
+      }
+
       if (cli !== "claude" && cli !== "codex") {
-        return reply.code(400).send({ error: "cli must be claude or codex" });
+        return reply.code(400).send({ error: "cli must be claude, codex or mcp:<key>" });
       }
 
       if (cli === "codex") {

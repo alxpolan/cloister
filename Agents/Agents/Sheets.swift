@@ -226,16 +226,30 @@ struct AuthSheet: View {
         .task { await run() }
     }
 
+    private var sheetTitle: String {
+        if cli.hasPrefix("mcp:") {
+            return "Authorize \(cli.dropFirst(4)) — \(container.name)"
+        }
+        return "\(cli == "claude" ? "Claude Code" : "Codex") Login — \(container.name)"
+    }
+
+    private var successText: String {
+        if cli.hasPrefix("mcp:") {
+            return "Authorization stored in the container — \(cli.dropFirst(4)) is ready for autonomous runs."
+        }
+        return cli == "claude"
+            ? "Token captured and stored securely — Claude Code is ready to use."
+            : "Codex is authenticated for \(container.name)."
+    }
+
     private var successView: some View {
         VStack(spacing: 14) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 52))
                 .foregroundStyle(.green)
-            Text("Login Successful")
+            Text(cli.hasPrefix("mcp:") ? "Authorization Successful" : "Login Successful")
                 .font(.title2.weight(.semibold))
-            Text(cli == "claude"
-                 ? "Token captured and stored securely — Claude Code is ready to use."
-                 : "Codex is authenticated for \(container.name).")
+            Text(successText)
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
@@ -246,7 +260,7 @@ struct AuthSheet: View {
     private var terminalView: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("\(cli == "claude" ? "Claude Code" : "Codex") Login — \(container.name)")
+                Text(sheetTitle)
                     .font(.headline)
                 Spacer()
             }
