@@ -120,6 +120,8 @@ private struct ContainerInfoForm: View {
                 cliRow(name: "Codex", cli: "codex", ok: container.codexAuthenticated)
             }
 
+            GitIdentitySection(container: container)
+
             Section("MCP Servers") {
                 if container.mcps.isEmpty && container.customServerCount == 0 {
                     Text("None assigned — use the MCPs tab.")
@@ -240,6 +242,54 @@ private struct ContainerInfoForm: View {
                     .foregroundStyle(ok ? .green : .secondary)
                 Text(name)
             }
+        }
+    }
+}
+
+// MARK: - Git identity section
+
+private struct GitIdentitySection: View {
+    let container: AgentContainer
+    @EnvironmentObject private var model: AppModel
+    @State private var name = ""
+    @State private var email = ""
+    @State private var saved = false
+    @State private var error = ""
+
+    var body: some View {
+        Section("Git Identity") {
+            TextField("Name", text: $name, prompt: Text("\(container.name) Agent"))
+            TextField("E-Mail", text: $email, prompt: Text("agents+\(container.company)@users.noreply.github.com"))
+            HStack {
+                if saved {
+                    Text("Saved — applies on next start.")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                }
+                if !error.isEmpty {
+                    Text(error).font(.caption).foregroundStyle(.red)
+                }
+                Spacer()
+                Button("Save") {
+                    Task {
+                        do {
+                            try await model.api.updateGitIdentity(container.id, name: name, email: email)
+                            await model.refresh()
+                            saved = true
+                            error = ""
+                        } catch {
+                            self.error = error.localizedDescription
+                            saved = false
+                        }
+                    }
+                }
+                .controlSize(.small)
+            }
+        }
+        .task(id: container.id) {
+            name = container.gitName ?? ""
+            email = container.gitEmail ?? ""
+            saved = false
         }
     }
 }

@@ -1,210 +1,110 @@
 # Agent Containers
 
-Multi-Tenant-Dashboard für isolierte Claude-Code-/Codex-Container — pro Firma
-(Marteso, KalBuddy, Pocketz, RowTally, …) ein eigener Docker-Container mit
-eigenem `$HOME`, eigener `~/.claude.json`/`.mcp.json` und eigenem
-`~/.codex/`-Auth-State. MCP-Server und Tokens sind strikt pro Firma getrennt —
-rein filesystembasiert, unabhängig von `--strict-mcp-config`.
+**Give every company its own isolated Claude Code & Codex — one dashboard, real logins, per-tenant MCP servers.**
 
-Gedacht als Ausführungsebene für [Paperclip](https://github.com/paperclipai/paperclip):
-statt `claude` direkt auf dem Host zu spawnen, ruft ein späterer
-`claude_docker`-Adapter `POST /run` auf.
+If you run coding agents for more than one company, app, or client, they all
+share the same `~/.claude.json`, the same globally-connected MCP servers, and
+the same tokens. One agent can see another's GitHub, Notion, RevenueCat — even
+though they should be strictly separated.
 
-## Architektur
+Agent Containers fixes that. Each company gets its own Docker container with
+its own `$HOME`, its own Claude Code / Codex login, and its own MCP servers and
+secrets — isolated at the filesystem level, not by convention. A clean
+dashboard (web + native macOS app) manages the fleet, and a drop-in
+[Paperclip](https://github.com/paperclipai/paperclip) adapter runs orchestrated
+agents inside the right container automatically.
 
-```
-frontend/   Next.js-Dashboard (Port 3000)
-backend/    Fastify + dockerode + pg + libsodium (Port 8080)
-docker/     base.Dockerfile — Basis-Image mit Claude Code + Codex CLI
-homes/      pro Firma ein Home-Verzeichnis, gemountet als /home/node
-```
+> Built by someone who manages ~8 companies and 50+ accounts and got tired of
+> agents leaking into each other. This is the missing isolation layer.
 
-- **Isolation:** `./homes/<firma>/` wird als `/home/node` in den Container
-  `agent-<firma>` gemountet. Claude-Auth (`~/.claude.json`), Codex-Auth
-  (`~/.codex/auth.json`) und Workspace liegen darin und überleben Neustarts.
-- **MCP-Config:** Bei jedem Start rendert das Backend
-  `workspace/.mcp.json` komplett neu aus der DB und setzt in `.claude.json`
-  `mcpServers: {}` + `enabledMcpjsonServers` — es gibt keinen anderen
-  MCP-Kanal in den Container. Auth-Felder in `.claude.json` werden gemerged,
-  nie überschrieben.
-- **Secrets:** Tokens liegen libsodium-verschlüsselt (secretbox) in Postgres
-  und werden nur beim Container-Start als Env-Variablen injiziert. In der
-  MCP-Config referenzierbar als `${GITHUB_TOKEN}` etc. (Claude Code expandiert
-  Env-Variablen in `.mcp.json`).
-- **Docker-Socket:** nur das Backend spricht mit der Docker-API. Agent-
-  Container bekommen den Socket nie gemountet.
+---
 
-## Setup
+## Why
 
-Voraussetzungen: Docker (läuft), Node 20+ (nur für lokale Entwicklung).
+- **Real per-tenant isolation.** `./homes/<company>/` is mounted as
+  `/home/node`. Claude auth (`~/.claude.json`), Codex auth (`~/.codex/`), MCP
+  OAuth tokens and the workspace all live there — separated on disk, robust
+  against known `--strict-mcp-config` bugs.
+- **Subscription logins that survive automation.** Log in Claude Code and Codex
+  *from the dashboard* (`setup-token` capture + a container-side OAuth callback
+  proxy for Codex). The auth state persists across restarts.
+- **OAuth MCP servers that work for autonomous runs.** Notion, Vercel, PostHog,
+  RevenueCat and friends are pre-authorized once via the dashboard (`mcp-remote`
+  under the hood); the token lands in the tenant home so headless runs just work.
+- **A global MCP catalog.** Define a server once (with real favicons), then tick
+  it on per company and paste the token — no hand-written JSON per container.
+- **Encrypted secrets.** Tokens are libsodium-encrypted in Postgres and only
+  ever decrypted into the target container's environment at runtime.
+- **Real git, not just the GitHub MCP.** Each container ships `git` + `gh` with
+  per-company identity and a credential helper wired to the bound token —
+  agents can clone, commit and push, not just call the API.
+- **No Docker socket in agent containers.** Only the backend talks to Docker.
 
-```sh
-# 1. Verschlüsselungskey generieren
-cp .env.example .env
-echo "SECRETS_KEY=$(openssl rand -hex 32)" > .env
+## Quick start
 
-# 2. Basis-Image für die Agent-Container bauen
-docker build -f docker/base.Dockerfile -t agent-base:latest docker/
-
-# 3. Alles starten
-docker compose up --build
-```
-
-Dashboard: http://localhost:3000 · API: http://localhost:8080
-
-### Workflow (pro Firma: zuordnen → einloggen → fertig)
-
-Die MCP-Server werden **einmal global** im **MCP catalog** definiert
-(GitHub, Notion, RevenueCat sind vorgeseedet; eigene per „Add server").
-Pro Firma dann nur noch:
-
-1. **New container** → Name `Marteso`, Slug `marteso`.
-2. **MCPs** auf der Karte → gewünschte Server anhaken; wo ein Token nötig
-   ist, entweder vorhandenes Secret wählen oder direkt Token pasten
-   (wird automatisch als Secret `<firma>-<server>` verschlüsselt gespeichert).
-3. **Start**, dann **login** neben Claude Code / Codex.
-
-Für Sonderfälle gibt es im MCPs-Dialog „Advanced: raw JSON extras"
-(zusätzliche Server nur für diesen Container, überschreibt bei
-Namensgleichheit den Katalog).
-
-### CLIs authentifizieren (einmalig pro Firma)
-
-Direkt im Dashboard: in der Container-Karte neben „Claude Code" bzw. „Codex"
-auf **login** klicken. Es öffnet sich ein Terminal-Dialog:
-
-- **Claude Code** (`claude setup-token`): Authorization-URL anklicken, im
-  Browser freigeben, den angezeigten Code zurück ins Eingabefeld pasten.
-- **Codex** (`codex login`): der Container wird dafür automatisch mit
-  Port 1455 neu gestartet (OAuth-Callback von localhost), URL anklicken,
-  im Browser einloggen — der Redirect landet im Container. Ein normaler
-  Restart entfernt den Port wieder. Nur ein Container kann gleichzeitig
-  einen Codex-Login laufen haben. Alternative ohne Browser-Flow:
-  API-Key als Secret speichern und im Terminal-Dialog
-  `codex login --api-key <key>` … oder klassisch per
-  `docker exec -it agent-<firma> codex login --api-key <key>`.
-
-Fallback bleibt immer: `docker exec -it agent-<firma> claude` / `codex`.
-
-Der Auth-State landet im gemounteten Home (`homes/marteso/`) und bleibt über
-Stop/Start/Recreate erhalten. Das Dashboard zeigt pro Container getrennt an,
-ob Claude Code und Codex authentifiziert sind.
-
-### OAuth-MCP-Server (Remote)
-
-Remote-Server einfach in der MCP-Config eintragen:
-
-```json
-{ "notion": { "type": "http", "url": "https://mcp.notion.com/mcp" } }
-```
-
-Sie werden auch in die Codex-`config.toml` übernommen. OAuth-Tokens, die
-Claude Code nach dem Authorize speichert, landen im Container-Home und sind
-damit pro Firma isoliert. Achtung: der interaktive `/mcp`-Authorize-Flow
-nutzt einen zufälligen localhost-Callback-Port im Container und funktioniert
-daher nur, wenn der Server/CLI einen Code-Paste-Fallback anbietet. Robuster
-Weg für Server mit Token-Support: Token als Secret speichern und per
-`"headers": { "Authorization": "Bearer ${MEIN_TOKEN}" }` referenzieren.
-
-## API
-
-| Route | Beschreibung |
-| --- | --- |
-| `GET /containers` | Liste inkl. Live-Status, Auth-Status beider CLIs, Accounts |
-| `POST /containers` | `{ name, company }` — legt Home-Verzeichnis + DB-Eintrag an |
-| `POST /containers/:id/start` | rendert Configs, (re)erstellt + startet Container |
-| `POST /containers/:id/stop` | stoppt Container |
-| `DELETE /containers/:id` | entfernt Container + DB-Eintrag (Home bleibt) |
-| `GET/POST/PUT/DELETE /mcp-catalog` | globale MCP-Server-Definitionen |
-| `GET/PUT /containers/:id/mcps` | Katalog-Zuweisung + Secret-Bindings pro Container |
-| `PUT /containers/:id/mcp-config` | Raw-JSON-Extras, mergen über den Katalog |
-| `PUT /containers/:id/accounts` | Low-level Env-Injection (`{ accounts: [...] }`, API-only) |
-| `POST /containers/:id/auth/:cli` | startet interaktive Login-Session (`claude`\|`codex`) |
-| `GET /auth-sessions/:sid` | Terminal-Output der Session (ANSI-bereinigt) |
-| `POST /auth-sessions/:sid/input` | `{ text }` — Code/Antwort an die Session senden |
-| `DELETE /auth-sessions/:sid` | Session abbrechen |
-| `GET /secrets` | nur Refs, nie Klartext |
-| `PUT /secrets` | `{ ref, value }` — verschlüsselt speichern |
-| `POST /run` | `{ company, prompt, cli?: "claude"\|"codex", timeoutMs? }` |
-
-### /run (Paperclip-Adapter)
+Requires Docker (running) and `openssl`.
 
 ```sh
-curl -s localhost:8080/run -X POST -H 'content-type: application/json' \
-  -d '{"company":"marteso","prompt":"Sag hallo"}'
-# → { "exitCode": 0, "stdout": "...", "stderr": "" }
+git clone https://github.com/<you>/agent-containers.git
+cd agent-containers
+./start.sh
 ```
 
-Intern: `docker exec agent-marteso claude -p "<prompt>" --output-format text
---dangerously-skip-permissions` (läuft als unprivilegierter `node`-User im
-Container). Für Codex: `codex exec --skip-git-repo-check "<prompt>"`.
+- **Dashboard** → http://localhost:3000
+- **API** → http://localhost:8080
 
-## Lokale Entwicklung (ohne Compose für Backend/Frontend)
+Then, per company:
 
-```sh
-docker compose up postgres -d
-cd backend  && SECRETS_KEY=<key aus .env> npm run dev   # Port 8080, DB via localhost:5433
-cd frontend && npm run dev                              # Port 3000
+1. **New container** → e.g. name `Marteso`, slug `marteso`.
+2. **MCPs** → tick the servers you want; paste a token or click **Authorize** for
+   OAuth servers.
+3. **Start**, then **Login** next to Claude Code / Codex.
+
+That's it — the company now has an isolated agent runtime. Repos the agents
+clone live in `homes/<company>/workspace/`, persistent across restarts.
+
+## Architecture
+
+```
+frontend/          Next.js dashboard (port 3000)
+backend/           Fastify + dockerode + pg + libsodium (port 8080)
+Agents/            Native macOS app (SwiftUI, macOS 26) — same features, native
+docker/            base.Dockerfile — Claude Code + Codex + mcp-remote + gh
+mcp/               Local MCP server so any Claude Code session can drive the fleet
+paperclip-adapter/ Paperclip adapter plugin (claude_docker)
+homes/             Per-company home dir, mounted as /home/node
 ```
 
-Hinweis: Läuft das Backend direkt auf dem Host, ist `HOST_HOMES_DIR` nicht
-nötig (Default = `./homes`). Im Compose-Setup ermittelt das Backend den Host-Pfad
-automatisch aus seinen eigenen Mounts (Override: `HOST_HOMES_DIR`), weil der
-Docker-Daemon Bind-Mounts auf dem Host auflöst.
+## Paperclip integration
 
-## Sicherheit
+`paperclip-adapter/` is a Paperclip adapter plugin (`claude_docker`) that runs
+each agent heartbeat inside the tenant's container instead of on the host — with
+its logins, MCPs and secrets. Register it in `~/.paperclip/adapter-plugins.json`,
+pick **Claude Docker** as the agent's adapter, choose a model (Claude Fable /
+Opus / Sonnet / Haiku or Codex GPT-5.6), and point it at a container slug.
 
-- Secrets nur verschlüsselt in der DB (libsodium secretbox, Key aus
-  `SECRETS_KEY`), Klartext existiert nur im Env des jeweiligen Containers.
-- `GET /secrets` liefert ausschließlich Referenzen.
-- Kein Agent-Container erhält den Docker-Socket oder erweiterte Privilegien;
-  alle laufen als `node` (uid 1000) mit `RestartPolicy: unless-stopped`.
-- Die API selbst hat keine AuthN — nur lokal betreiben oder hinter einen
-  Reverse-Proxy mit Auth legen, bevor sie irgendwo erreichbar ist.
+The included MCP server also exposes a `bind_paperclip_company` tool that flips
+every agent of a Paperclip company onto the container in one call.
 
-## Paperclip-Integration (`claude_docker`-Adapter)
+## Security
 
-`paperclip-adapter/` ist ein Paperclip-Adapter-Plugin, das Agent-Heartbeats
-statt auf dem Host im isolierten Firmen-Container ausführt (`POST /run`).
+- Secrets are encrypted at rest (libsodium secretbox, key from `SECRETS_KEY`);
+  plaintext only exists in the target container's env.
+- Agent containers never receive the Docker socket or extra privileges; they run
+  as unprivileged `node` (uid 1000).
+- The API has no built-in auth — run it locally, or behind an authenticating
+  reverse proxy. Do not expose it directly.
+- Use fine-grained, per-company tokens so a tenant's agent can only reach that
+  tenant's resources. Isolation is only as tight as the tokens you bind.
 
-Registrierung in `~/.paperclip/adapter-plugins.json`:
+## Status
 
-```json
-[{
-  "packageName": "claude-docker-paperclip-adapter",
-  "localPath": "/pfad/zu/agent-containers/paperclip-adapter",
-  "type": "claude_docker",
-  "installedAt": "2026-07-22T00:00:00Z"
-}]
-```
+Working and used in production by the author across multiple companies. Expect
+sharp edges — it depends on the current behavior of the Claude Code and Codex
+CLIs, which can change between releases.
 
-Agent-Konfiguration in Paperclip:
+German docs and deeper implementation notes: [`docs/README.de.md`](docs/README.de.md).
 
-```json
-{
-  "adapterType": "claude_docker",
-  "adapterConfig": { "company": "marteso", "cli": "claude", "timeoutSec": 900 }
-}
-```
+## License
 
-Der Adapter injiziert `PAPERCLIP_API_URL` (localhost → `host.docker.internal`
-umgeschrieben), `PAPERCLIP_AGENT_ID`, `PAPERCLIP_COMPANY_ID` und den Run-JWT
-als `PAPERCLIP_API_KEY` in den Container-Exec, sodass der Agent aus dem
-Container heraus Issues lesen/kommentieren kann. Environment-Test in
-Paperclip prüft Backend, Container-Status und CLI-Auth. Bestehende Agents
-umstellen: `PATCH /api/agents/:id` mit `adapterType: "claude_docker"`.
-
-## Lokaler MCP-Server (Claude Code & Co steuern die Container)
-
-`mcp/server.mjs` ist ein stdio-MCP-Server, der die Backend-API wrappt und in
-`.mcp.json` des Repos registriert ist. Jede Claude-Code-Session in diesem
-Projekt kann damit direkt Container verwalten:
-
-`list_containers`, `create_container`, `start_container`, `stop_container`,
-`run_agent` (Prompt in Container ausführen), `list_mcp_catalog`,
-`get/set_mcp_assignments`, `set_secret`, `list_secret_refs`, `bind_paperclip_company`
-(stellt alle Agents einer Paperclip-Firma auf den gewünschten Container um).
-
-Setup: `cd mcp && npm install` — danach den Server beim nächsten
-Claude-Code-Start im Projekt genehmigen. Für andere Clients (Claude Desktop
-etc.): `node mcp/server.mjs` mit Env `AGENT_API_URL=http://localhost:8080`.
+MIT — see [LICENSE](LICENSE).

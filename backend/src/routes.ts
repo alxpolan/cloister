@@ -64,7 +64,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const { rows } = await pool.query<
       ContainerRow & { has_icon: boolean; icon_version: number }
     >(
-      `SELECT id, name, company, status, home_path, mcp_config_json, created_at,
+      `SELECT id, name, company, status, home_path, mcp_config_json, git_name, git_email, created_at,
               (icon IS NOT NULL) AS has_icon,
               COALESCE(extract(epoch FROM icon_updated_at), 0)::bigint AS icon_version
        FROM containers ORDER BY created_at`,
@@ -189,6 +189,20 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     );
     return { ok: true, container: rows[0], note: "applies on next start" };
   });
+
+  app.put<{ Params: { id: string }; Body: { name?: string; email?: string } }>(
+    "/containers/:id/git-identity",
+    async (req, reply) => {
+      const row = await getContainerRow(req.params.id);
+      if (!row) return reply.code(404).send({ error: "not found" });
+      const { name, email } = req.body ?? ({} as any);
+      await pool.query(
+        "UPDATE containers SET git_name = $1, git_email = $2 WHERE id = $3",
+        [name?.trim() || null, email?.trim() || null, row.id]
+      );
+      return { ok: true, note: "applies on next start" };
+    }
+  );
 
   // ---------- container icons ----------
 

@@ -1,8 +1,17 @@
 node_modules/
 dist/
 .next/
+backend/dist/
+frontend/.next/
+
 .env
+
 homes/*
 !homes/.gitkeep
+
+**/xcuserdata/
 *.log
+.paperclip-dev.log
 .DS_Store
+
+docs/LAUNCH.md

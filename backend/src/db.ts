@@ -56,6 +56,9 @@ export async function migrate(): Promise<void> {
     ALTER TABLE containers ADD COLUMN IF NOT EXISTS icon_mime text;
     ALTER TABLE containers ADD COLUMN IF NOT EXISTS icon_updated_at timestamptz;
 
+    ALTER TABLE containers ADD COLUMN IF NOT EXISTS git_name text;
+    ALTER TABLE containers ADD COLUMN IF NOT EXISTS git_email text;
+
     ALTER TABLE mcp_catalog ADD COLUMN IF NOT EXISTS website text;
     ALTER TABLE mcp_catalog ADD COLUMN IF NOT EXISTS favicon bytea;
     ALTER TABLE mcp_catalog ADD COLUMN IF NOT EXISTS favicon_mime text;
@@ -118,6 +121,8 @@ export interface ContainerRow {
   status: string;
   home_path: string;
   mcp_config_json: { mcpServers: Record<string, unknown> };
+  git_name: string | null;
+  git_email: string | null;
   created_at: string;
 }
 

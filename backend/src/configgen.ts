@@ -165,6 +165,27 @@ async function writeCodexConfig(
   await fs.writeFile(file, TOML.stringify(merged) + "\n", "utf8");
 }
 
+async function writeGitConfig(container: ContainerRow): Promise<void> {
+  const file = path.join(localHomePath(container.company), ".gitconfig");
+  const content = [
+    "[user]",
+    `\tname = ${container.git_name?.trim() || `${container.name} Agent`}`,
+    `\temail = ${container.git_email?.trim() || `agents+${container.company}@users.noreply.github.com`}`,
+    "[init]",
+    "\tdefaultBranch = main",
+    "[safe]",
+    "\tdirectory = *",
+    '[credential "https://github.com"]',
+    '\thelper = "!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f"',
+    '[credential "https://gist.github.com"]',
+    '\thelper = "!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f"',
+    "[push]",
+    "\tautoSetupRemote = true",
+    "",
+  ].join("\n");
+  await fs.writeFile(file, content, "utf8");
+}
+
 export async function renderConfigs(
   container: ContainerRow,
   servers: Record<string, unknown>
@@ -173,6 +194,7 @@ export async function renderConfigs(
   await writeMcpJson(container, servers);
   await writeClaudeJson(container, servers);
   await writeCodexConfig(container, servers);
+  await writeGitConfig(container);
 }
 
 export async function authStatus(

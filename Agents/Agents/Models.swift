@@ -63,6 +63,8 @@ struct AgentContainer: Codable, Identifiable, Hashable {
     let mcpConfigJson: McpConfigJson?
     let hasIcon: Bool?
     let iconVersion: Double?
+    let gitName: String?
+    let gitEmail: String?
 
     var isRunning: Bool { status == "running" }
     var customServerCount: Int { mcpConfigJson?.mcpServers?.count ?? 0 }
@@ -71,6 +73,8 @@ struct AgentContainer: Codable, Identifiable, Hashable {
         case id, name, company, status, claudeAuthenticated, codexAuthenticated, mcps
         case mcpConfigJson = "mcp_config_json"
         case hasIcon, iconVersion
+        case gitName = "git_name"
+        case gitEmail = "git_email"
     }
 }
 

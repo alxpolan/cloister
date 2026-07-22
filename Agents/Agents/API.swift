@@ -66,6 +66,14 @@ struct APIClient: Sendable {
         let _: OkResponse = try await request("containers/\(id)", method: "DELETE")
     }
 
+    func updateGitIdentity(_ containerID: String, name: String, email: String) async throws {
+        struct Payload: Encodable { let name: String, email: String }
+        let _: OkResponse = try await request(
+            "containers/\(containerID)/git-identity", method: "PUT",
+            body: encode(Payload(name: name, email: email))
+        )
+    }
+
     // MARK: container icons
 
     func iconURL(_ containerID: String, version: Double?) -> URL {

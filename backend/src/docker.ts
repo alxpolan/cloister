@@ -110,7 +110,7 @@ export async function startContainer(
       Cmd: ["sleep", "infinity"],
       User: "node",
       WorkingDir: CONTAINER_WORKSPACE,
-      Env: [...env, "HOME=/home/node"],
+      Env: [...env, "HOME=/home/node", "GIT_TERMINAL_PROMPT=0"],
       Labels: {
         "agent-containers.company": row.company,
         "agent-containers.id": row.id,
@@ -211,7 +211,7 @@ export async function execInContainer(
     AttachStderr: true,
     User: "node",
     WorkingDir: CONTAINER_WORKSPACE,
-    Env: ["HOME=/home/node", ...extraEnv],
+    Env: ["HOME=/home/node", "GIT_TERMINAL_PROMPT=0", ...extraEnv],
   });
 
   const stream = await exec.start({ hijack: true, stdin: false });
