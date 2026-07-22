@@ -4,11 +4,19 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 const API = process.env.AGENT_API_URL ?? "http://localhost:8080";
+const API_TOKEN = process.env.AGENT_API_TOKEN ?? "";
+
+function authHeaders(hasBody) {
+  const h = {};
+  if (hasBody) h["content-type"] = "application/json";
+  if (API_TOKEN) h.authorization = `Bearer ${API_TOKEN}`;
+  return h;
+}
 
 async function api(path, init) {
   const res = await fetch(`${API}${path}`, {
     ...init,
-    headers: init?.body ? { "content-type": "application/json" } : undefined,
+    headers: authHeaders(Boolean(init?.body)),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status} on ${path}`);
@@ -216,7 +224,7 @@ const PAPERCLIP_URL = process.env.PAPERCLIP_URL ?? "http://localhost:3100";
 async function paperclip(path, init) {
   const res = await fetch(`${PAPERCLIP_URL}${path}`, {
     ...init,
-    headers: init?.body ? { "content-type": "application/json" } : undefined,
+    headers: init?.body ? { "content-type": "application/json" } : {},
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error ?? `paperclip ${path} failed: HTTP ${res.status}`);

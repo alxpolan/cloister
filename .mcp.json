@@ -4,7 +4,8 @@
       "command": "node",
       "args": ["mcp/server.mjs"],
       "env": {
-        "AGENT_API_URL": "http://localhost:8080"
+        "AGENT_API_URL": "http://localhost:8080",
+        "AGENT_API_TOKEN": "${AGENT_API_TOKEN}"
       }
     }
   }

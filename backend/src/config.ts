@@ -8,10 +8,12 @@ function required(name: string): string {
 
 export const config = {
   port: Number(process.env.PORT ?? 8080),
+  host: process.env.HOST ?? "127.0.0.1",
   databaseUrl:
     process.env.DATABASE_URL ??
     "postgres://agent:agent@localhost:5433/agent_containers",
   secretsKey: required("SECRETS_KEY"),
+  apiToken: process.env.API_TOKEN ?? "",
   homesDir: path.resolve(process.env.HOMES_DIR ?? "./homes"),
   hostHomesDir: process.env.HOST_HOMES_DIR ?? "",
   agentImage: process.env.AGENT_IMAGE ?? "agent-base:latest",

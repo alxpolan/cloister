@@ -1,5 +1,4 @@
-export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+export const API_URL = "/api";
 
 export interface Account {
   id: string;
@@ -99,7 +98,7 @@ export const api = {
     }),
   updateAccounts: (
     id: string,
-    accounts: Omit<Account, "id" | "container_id">[]
+    accounts: Omit<Account, "id" | "container_id">[],
   ) =>
     request<{ ok: boolean }>(`/containers/${id}/accounts`, {
       method: "PUT",
@@ -120,10 +119,11 @@ export const api = {
     }),
   deleteCatalogEntry: (id: string) =>
     request<{ ok: boolean }>(`/mcp-catalog/${id}`, { method: "DELETE" }),
-  getAssignments: (id: string) => request<Assignment[]>(`/containers/${id}/mcps`),
+  getAssignments: (id: string) =>
+    request<Assignment[]>(`/containers/${id}/mcps`),
   updateAssignments: (
     id: string,
-    assignments: { catalog_id: string; bindings?: Record<string, string> }[]
+    assignments: { catalog_id: string; bindings?: Record<string, string> }[],
   ) =>
     request<{ ok: boolean }>(`/containers/${id}/mcps`, {
       method: "PUT",
@@ -132,9 +132,10 @@ export const api = {
   startAuth: (id: string, cli: string) =>
     request<{ sessionId: string; note: string }>(
       `/containers/${id}/auth/${encodeURIComponent(cli)}`,
-      { method: "POST" }
+      { method: "POST" },
     ),
-  getAuthSession: (sid: string) => request<AuthSessionState>(`/auth-sessions/${sid}`),
+  getAuthSession: (sid: string) =>
+    request<AuthSessionState>(`/auth-sessions/${sid}`),
   sendAuthInput: (sid: string, text: string) =>
     request<{ ok: boolean }>(`/auth-sessions/${sid}/input`, {
       method: "POST",

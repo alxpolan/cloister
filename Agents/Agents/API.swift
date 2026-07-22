@@ -16,6 +16,10 @@ struct APIClient: Sendable {
         return URL(string: raw) ?? URL(string: Self.defaultBaseURL)!
     }
 
+    var apiToken: String {
+        UserDefaults.standard.string(forKey: "apiToken") ?? ""
+    }
+
     private func request<T: Decodable>(
         _ path: String,
         method: String = "GET",
@@ -24,6 +28,9 @@ struct APIClient: Sendable {
         var req = URLRequest(url: baseURL.appendingPathComponent(path))
         req.httpMethod = method
         req.timeoutInterval = 180
+        if !apiToken.isEmpty {
+            req.setValue("Bearer \(apiToken)", forHTTPHeaderField: "Authorization")
+        }
         if let body {
             req.httpBody = body
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")

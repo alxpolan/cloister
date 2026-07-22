@@ -20,13 +20,15 @@ services:
     environment:
       DATABASE_URL: postgres://agent:agent@postgres:5432/agent_containers
       SECRETS_KEY: ${SECRETS_KEY:?run 'openssl rand -hex 32' and put SECRETS_KEY=... into .env}
+      API_TOKEN: ${API_TOKEN:?run ./start.sh or put API_TOKEN=... into .env}
+      HOST: 0.0.0.0
       HOMES_DIR: /app/homes
       AGENT_IMAGE: agent-base:latest
     volumes:
       - ./homes:/app/homes
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -34,10 +36,11 @@ services:
   frontend:
     build:
       context: ./frontend
-      args:
-        NEXT_PUBLIC_API_URL: http://localhost:8080
+    environment:
+      BACKEND_URL: http://backend:8080
+      API_TOKEN: ${API_TOKEN}
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       - backend
 

@@ -69,13 +69,19 @@ function containersApiUrl() {
   return process.env.AGENT_CONTAINERS_API_URL ?? DEFAULT_API_URL;
 }
 
+function containersApiToken() {
+  return process.env.AGENT_CONTAINERS_API_TOKEN ?? "";
+}
+
 function resolveCliAndModel(config) {
   const raw = str(config?.model);
   let cli = "claude";
   let model = "";
+
   if (raw.includes(":")) {
     const idx = raw.indexOf(":");
     cli = raw.slice(0, idx) === "codex" ? "codex" : "claude";
+
     const rest = raw.slice(idx + 1);
     model = rest === "default" ? "" : rest;
   } else if (raw === "codex" || raw === "claude") {
@@ -83,6 +89,7 @@ function resolveCliAndModel(config) {
   } else if (raw) {
     model = raw;
   }
+
   const explicitCli = str(config?.cli);
   if (explicitCli === "claude" || explicitCli === "codex") cli = explicitCli;
   return { cli, model };
@@ -95,14 +102,17 @@ async function deriveCompanySlug(paperclipCompanyId) {
     const res = await fetch(`http://localhost:${port}/api/companies`, {
       signal: AbortSignal.timeout(5000),
     });
+
     if (!res.ok) return "";
     const companies = await res.json();
     const company = companies.find((c) => c.id === paperclipCompanyId);
+
     if (!company?.name) return "";
     const slug = company.name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "");
+
     const containers = await api("/containers");
     return containers.some((c) => c.company === slug) ? slug : "";
   } catch {
@@ -111,11 +121,13 @@ async function deriveCompanySlug(paperclipCompanyId) {
 }
 
 async function api(path, init) {
-  const res = await fetch(`${containersApiUrl()}${path}`, {
-    ...init,
-    headers: init?.body ? { "content-type": "application/json" } : undefined,
-  });
+  const headers = {};
+  if (init?.body) headers["content-type"] = "application/json";
+  const token = containersApiToken();
+  if (token) headers.authorization = `Bearer ${token}`;
+  const res = await fetch(`${containersApiUrl()}${path}`, { ...init, headers });
   const body = await res.json().catch(() => ({}));
+
   if (!res.ok) {
     throw new Error(body.error ?? `agent-containers ${path} failed: HTTP ${res.status}`);
   }
@@ -127,6 +139,7 @@ function postJsonLongPoll(path, payload, timeoutMs) {
     import("node:http").then((http) => {
       const url = new URL(`${containersApiUrl()}${path}`);
       const data = JSON.stringify(payload);
+      const token = containersApiToken();
       const req = http.request(
         {
           hostname: url.hostname,
@@ -136,6 +149,7 @@ function postJsonLongPoll(path, payload, timeoutMs) {
           headers: {
             "content-type": "application/json",
             "content-length": Buffer.byteLength(data),
+            ...(token ? { authorization: `Bearer ${token}` } : {}),
           },
         },
         (res) => {
@@ -228,6 +242,7 @@ export function createServerAdapter() {
     async execute(ctx) {
       const { runId, agent, config, context, onLog, authToken } = ctx;
       let company = str(config.company);
+
       if (!company) {
         company = await deriveCompanySlug(agent.companyId);
         if (company) {
@@ -237,6 +252,7 @@ export function createServerAdapter() {
           );
         }
       }
+
       if (!company) {
         throw new Error(
           "claude_docker: no container configured and no container matches the Paperclip company name — set adapterConfig.company to a slug from the Agents dashboard"
@@ -244,7 +260,6 @@ export function createServerAdapter() {
       }
       const { cli, model } = resolveCliAndModel(config);
       const timeoutSec = num(config.timeoutSec, 1800);
-
       const templateData = {
         agentId: agent.id,
         companyId: agent.companyId,
@@ -254,10 +269,12 @@ export function createServerAdapter() {
         run: { id: runId, source: "on_demand" },
         context,
       };
+
       const wake = context?.paperclipWake;
       const wakeSection = wake
         ? "## Wake payload\n```json\n" + JSON.stringify(wake, null, 2) + "\n```"
         : "";
+        
       const prompt = joinSections([
         wakeSection,
         str(context?.paperclipSessionHandoffMarkdown),
@@ -293,7 +310,7 @@ export function createServerAdapter() {
       const startedAt = Date.now();
       const keepAlive = setInterval(() => {
         const elapsed = Math.round((Date.now() - startedAt) / 1000);
-        onLog("stdout", `[claude_docker] container still working (${elapsed}s elapsed)\n`).catch(() => {});
+        onLog("stdout", `[claude_docker] container still working (${elapsed}s elapsed)\n`).catch(() => { });
       }, 15000);
 
       let body;
