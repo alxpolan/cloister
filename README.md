@@ -162,9 +162,37 @@ Docker-Daemon Bind-Mounts auf dem Host auflöst.
 - Die API selbst hat keine AuthN — nur lokal betreiben oder hinter einen
   Reverse-Proxy mit Auth legen, bevor sie irgendwo erreichbar ist.
 
-## Nicht enthalten (Folgeauftrag)
+## Paperclip-Integration (`claude_docker`-Adapter)
 
-Der Paperclip-Adapter `claude_docker`, der `POST /run` konsumiert.
+`paperclip-adapter/` ist ein Paperclip-Adapter-Plugin, das Agent-Heartbeats
+statt auf dem Host im isolierten Firmen-Container ausführt (`POST /run`).
+
+Registrierung in `~/.paperclip/adapter-plugins.json`:
+
+```json
+[{
+  "packageName": "claude-docker-paperclip-adapter",
+  "localPath": "/pfad/zu/agent-containers/paperclip-adapter",
+  "type": "claude_docker",
+  "installedAt": "2026-07-22T00:00:00Z"
+}]
+```
+
+Agent-Konfiguration in Paperclip:
+
+```json
+{
+  "adapterType": "claude_docker",
+  "adapterConfig": { "company": "marteso", "cli": "claude", "timeoutSec": 900 }
+}
+```
+
+Der Adapter injiziert `PAPERCLIP_API_URL` (localhost → `host.docker.internal`
+umgeschrieben), `PAPERCLIP_AGENT_ID`, `PAPERCLIP_COMPANY_ID` und den Run-JWT
+als `PAPERCLIP_API_KEY` in den Container-Exec, sodass der Agent aus dem
+Container heraus Issues lesen/kommentieren kann. Environment-Test in
+Paperclip prüft Backend, Container-Status und CLI-Auth. Bestehende Agents
+umstellen: `PATCH /api/agents/:id` mit `adapterType: "claude_docker"`.
 
 ## Lokaler MCP-Server (Claude Code & Co steuern die Container)
 
@@ -174,7 +202,8 @@ Projekt kann damit direkt Container verwalten:
 
 `list_containers`, `create_container`, `start_container`, `stop_container`,
 `run_agent` (Prompt in Container ausführen), `list_mcp_catalog`,
-`get/set_mcp_assignments`, `set_secret`, `list_secret_refs`.
+`get/set_mcp_assignments`, `set_secret`, `list_secret_refs`, `bind_paperclip_company`
+(stellt alle Agents einer Paperclip-Firma auf den gewünschten Container um).
 
 Setup: `cd mcp && npm install` — danach den Server beim nächsten
 Claude-Code-Start im Projekt genehmigen. Für andere Clients (Claude Desktop

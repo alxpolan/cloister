@@ -22,12 +22,11 @@ export async function resolveHostHomesDir(): Promise<void> {
       config.hostHomesDir = mount.Source;
       console.log(`resolved host homes dir: ${config.hostHomesDir}`);
     }
-  } catch {
-  }
+  } catch {}
 }
 
 export async function dockerState(
-  company: string
+  company: string,
 ): Promise<"running" | "stopped" | "missing"> {
   try {
     const info = await docker.getContainer(containerName(company)).inspect();
@@ -41,7 +40,7 @@ export async function dockerState(
 export async function resolveEnv(containerId: string): Promise<string[]> {
   const { rows } = await pool.query<AccountRow>(
     "SELECT * FROM accounts WHERE container_id = $1",
-    [containerId]
+    [containerId],
   );
   const env: string[] = [];
   for (const account of rows) {
@@ -63,7 +62,7 @@ export async function resolveAllEnv(containerId: string): Promise<string[]> {
     [...accountEnv, ...bindingEnv].map((e) => {
       const i = e.indexOf("=");
       return [e.slice(0, i), e] as const;
-    })
+    }),
   );
   return [...merged.values()];
 }
@@ -75,7 +74,7 @@ export interface StartOptions {
 const CODEX_PROXY_JS =
   'const net=require("net");' +
   'net.createServer(s=>{const c=net.connect(1455,"127.0.0.1");' +
-  's.pipe(c);c.pipe(s);' +
+  "s.pipe(c);c.pipe(s);" +
   's.on("error",()=>c.destroy());c.on("error",()=>s.destroy());})' +
   '.listen(1456,"0.0.0.0");';
 
@@ -90,7 +89,10 @@ export async function startCodexAuthProxy(company: string): Promise<void> {
   await exec.start({ Detach: true });
 }
 
-export async function startContainer(row: ContainerRow, opts: StartOptions = {}): Promise<void> {
+export async function startContainer(
+  row: ContainerRow,
+  opts: StartOptions = {},
+): Promise<void> {
   await renderConfigs(row, await getEffectiveMcpServers(row));
 
   const name = containerName(row.company);
@@ -101,28 +103,71 @@ export async function startContainer(row: ContainerRow, opts: StartOptions = {})
   }
 
   const env = await resolveAllEnv(row.id);
-  const created = await docker.createContainer({
-    name,
-    Image: config.agentImage,
-    Cmd: ["sleep", "infinity"],
-    User: "node",
-    WorkingDir: CONTAINER_WORKSPACE,
-    Env: [...env, "HOME=/home/node"],
-    Labels: {
-      "agent-containers.company": row.company,
-      "agent-containers.id": row.id,
-    },
-    ...(opts.codexAuthPort ? { ExposedPorts: { "1456/tcp": {} } } : {}),
-    HostConfig: {
-      Binds: [`${hostHomePath(row.company)}:/home/node`],
-      RestartPolicy: { Name: "unless-stopped" },
-      ...(opts.codexAuthPort
-        ? { PortBindings: { "1456/tcp": [{ HostIp: "127.0.0.1", HostPort: "1455" }] } }
-        : {}),
-    },
-  });
-  await created.start();
-  await pool.query("UPDATE containers SET status = 'running' WHERE id = $1", [row.id]);
+  const create = (withAuthPort: boolean) =>
+    docker.createContainer({
+      name,
+      Image: config.agentImage,
+      Cmd: ["sleep", "infinity"],
+      User: "node",
+      WorkingDir: CONTAINER_WORKSPACE,
+      Env: [...env, "HOME=/home/node"],
+      Labels: {
+        "agent-containers.company": row.company,
+        "agent-containers.id": row.id,
+      },
+      ...(withAuthPort ? { ExposedPorts: { "1456/tcp": {} } } : {}),
+      HostConfig: {
+        Binds: [`${hostHomePath(row.company)}:/home/node`],
+        RestartPolicy: { Name: "unless-stopped" },
+        ...(withAuthPort
+          ? {
+              PortBindings: {
+                "1456/tcp": [{ HostIp: "127.0.0.1", HostPort: "1455" }],
+              },
+            }
+          : {}),
+      },
+    });
+
+  const created = await create(Boolean(opts.codexAuthPort));
+  try {
+    await created.start();
+  } catch (err: any) {
+    if (
+      opts.codexAuthPort &&
+      /port is already allocated/i.test(String(err.message))
+    ) {
+      await created.remove({ force: true }).catch(() => {});
+      const fallback = await create(false);
+      await fallback.start();
+      await pool.query(
+        "UPDATE containers SET status = 'running' WHERE id = $1",
+        [row.id],
+      );
+      throw new Error(
+        "auth port 1455 is taken by another process; the container was restarted without it — close the other login and try again",
+      );
+    }
+    throw err;
+  }
+  await pool.query("UPDATE containers SET status = 'running' WHERE id = $1", [
+    row.id,
+  ]);
+}
+
+export async function releaseAuthPort(exceptCompany: string): Promise<void> {
+  const list = await docker.listContainers();
+  for (const info of list) {
+    const company = info.Labels?.["agent-containers.company"];
+    if (!company || company === exceptCompany) continue;
+    const holdsPort = (info.Ports ?? []).some((p) => p.PublicPort === 1455);
+    if (!holdsPort) continue;
+    const { rows } = await pool.query<ContainerRow>(
+      "SELECT * FROM containers WHERE company = $1",
+      [company],
+    );
+    if (rows[0]) await startContainer(rows[0]);
+  }
 }
 
 export async function stopContainer(row: ContainerRow): Promise<void> {
@@ -132,12 +177,16 @@ export async function stopContainer(row: ContainerRow): Promise<void> {
   } catch (err: any) {
     if (err.statusCode !== 404 && err.statusCode !== 304) throw err;
   }
-  await pool.query("UPDATE containers SET status = 'stopped' WHERE id = $1", [row.id]);
+  await pool.query("UPDATE containers SET status = 'stopped' WHERE id = $1", [
+    row.id,
+  ]);
 }
 
 export async function removeContainer(row: ContainerRow): Promise<void> {
   try {
-    await docker.getContainer(containerName(row.company)).remove({ force: true });
+    await docker
+      .getContainer(containerName(row.company))
+      .remove({ force: true });
   } catch (err: any) {
     if (err.statusCode !== 404) throw err;
   }
@@ -153,7 +202,7 @@ export async function execInContainer(
   company: string,
   cmd: string[],
   timeoutMs = 15 * 60 * 1000,
-  extraEnv: string[] = []
+  extraEnv: string[] = [],
 ): Promise<ExecResult> {
   const container = docker.getContainer(containerName(company));
   const exec = await container.exec({

@@ -1,0 +1,8 @@
+{
+  "name": "claude-docker-paperclip-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs",
+  "description": "Paperclip adapter that executes agent runs inside per-company agent-containers via POST /run"
+}

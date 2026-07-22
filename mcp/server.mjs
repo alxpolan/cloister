@@ -211,5 +211,84 @@ server.tool(
   }
 );
 
+const PAPERCLIP_URL = process.env.PAPERCLIP_URL ?? "http://localhost:3100";
+
+async function paperclip(path, init) {
+  const res = await fetch(`${PAPERCLIP_URL}${path}`, {
+    ...init,
+    headers: init?.body ? { "content-type": "application/json" } : undefined,
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? `paperclip ${path} failed: HTTP ${res.status}`);
+  return body;
+}
+
+server.tool(
+  "bind_paperclip_company",
+  "Route ALL agents of a Paperclip company through an agent-container: sets adapterType=claude_docker and the container slug on every agent. Run again after hiring new agents.",
+  {
+    paperclipCompany: z.string().describe("Paperclip company name or id"),
+    container: z.string().describe("agent-containers company slug, e.g. marteso"),
+    cli: z.enum(["claude", "codex"]).optional().describe("default: claude"),
+  },
+  async ({ paperclipCompany, container, cli }) => {
+    try {
+      const containers = await api("/containers");
+      if (!containers.some((c) => c.company === container)) {
+        throw new Error(`unknown container slug '${container}'`);
+      }
+      const companies = await paperclip("/api/companies");
+      const company = companies.find(
+        (c) => c.id === paperclipCompany || c.name.toLowerCase() === paperclipCompany.toLowerCase()
+      );
+      if (!company) {
+        throw new Error(
+          `unknown paperclip company '${paperclipCompany}' (known: ${companies.map((c) => c.name).join(", ")})`
+        );
+      }
+      const mapModel = (adapterType, oldModel) => {
+        if (adapterType === "claude_docker" && oldModel) return oldModel;
+        const wantCodex = cli === "codex" || adapterType === "codex_local";
+        if (wantCodex) {
+          return oldModel && oldModel.startsWith("gpt-") ? `codex:${oldModel}` : "codex:default";
+        }
+        if (!oldModel) return "claude:default";
+        for (const alias of ["haiku", "sonnet", "opus", "fable"]) {
+          if (oldModel.includes(alias)) return `claude:${alias}`;
+        }
+        return `claude:${oldModel}`;
+      };
+      const agents = await paperclip(`/api/companies/${company.id}/agents`);
+      const results = [];
+      for (const agent of agents) {
+        try {
+          const existing =
+            agent.adapterConfig && typeof agent.adapterConfig === "object"
+              ? agent.adapterConfig
+              : {};
+          const model = mapModel(agent.adapterType, existing.model);
+          await paperclip(`/api/agents/${agent.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              adapterType: "claude_docker",
+              adapterConfig: { ...existing, company: container, model },
+            }),
+          });
+          results.push(`${agent.name}: bound (was ${agent.adapterType}, model → ${model})`);
+        } catch (err) {
+          results.push(`${agent.name}: FAILED — ${err.message}`);
+        }
+      }
+      return text({
+        paperclipCompany: company.name,
+        container,
+        agents: results,
+      });
+    } catch (err) {
+      return fail(err);
+    }
+  }
+);
+
 const transport = new StdioServerTransport();
 await server.connect(transport);
