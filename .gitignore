@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.next/
+.env
+homes/*
+!homes/.gitkeep
+*.log
+.DS_Store

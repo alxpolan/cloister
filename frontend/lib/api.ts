@@ -1,0 +1,145 @@
+export const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+
+export interface Account {
+  id: string;
+  container_id: string;
+  type: string;
+  label: string;
+  role: string;
+  env_var: string | null;
+  secret_ref: string | null;
+}
+
+export interface McpSummary {
+  key: string;
+  label: string;
+  icon: string;
+  secretsOk: boolean;
+}
+
+export interface Container {
+  id: string;
+  name: string;
+  company: string;
+  status: "running" | "stopped";
+  home_path: string;
+  mcp_config_json: { mcpServers: Record<string, unknown> };
+  created_at: string;
+  claudeAuthenticated: boolean;
+  codexAuthenticated: boolean;
+  accounts: Account[];
+  mcps: McpSummary[];
+}
+
+export interface CatalogEntry {
+  id: string;
+  key: string;
+  label: string;
+  icon: string;
+  config_json: Record<string, unknown>;
+  secrets_json: { env: string; label: string }[];
+}
+
+export interface Assignment extends CatalogEntry {
+  container_id: string;
+  bindings_json: Record<string, string>;
+}
+
+export interface SecretRef {
+  ref: string;
+  updated_at: string;
+}
+
+export interface AuthSessionState {
+  id: string;
+  cli: "claude" | "codex";
+  running: boolean;
+  exitCode: number | null;
+  output: string;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    ...init,
+    // only claim JSON when there is a body — Fastify rejects an empty
+    // JSON-typed body with FST_ERR_CTP_EMPTY_JSON_BODY
+    headers: init?.body
+      ? { "Content-Type": "application/json", ...init?.headers }
+      : init?.headers,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export const api = {
+  listContainers: () => request<Container[]>("/containers"),
+  createContainer: (name: string, company: string) =>
+    request<Container>("/containers", {
+      method: "POST",
+      body: JSON.stringify({ name, company }),
+    }),
+  startContainer: (id: string) =>
+    request<{ ok: boolean }>(`/containers/${id}/start`, { method: "POST" }),
+  stopContainer: (id: string) =>
+    request<{ ok: boolean }>(`/containers/${id}/stop`, { method: "POST" }),
+  deleteContainer: (id: string) =>
+    request<{ ok: boolean }>(`/containers/${id}`, { method: "DELETE" }),
+  updateMcpConfig: (id: string, mcpServers: Record<string, unknown>) =>
+    request<{ ok: boolean }>(`/containers/${id}/mcp-config`, {
+      method: "PUT",
+      body: JSON.stringify({ mcpServers }),
+    }),
+  updateAccounts: (
+    id: string,
+    accounts: Omit<Account, "id" | "container_id">[]
+  ) =>
+    request<{ ok: boolean }>(`/containers/${id}/accounts`, {
+      method: "PUT",
+      body: JSON.stringify({ accounts }),
+    }),
+  listCatalog: () => request<CatalogEntry[]>("/mcp-catalog"),
+  createCatalogEntry: (entry: {
+    key: string;
+    label: string;
+    icon?: string;
+    config: Record<string, unknown>;
+    secrets?: { env: string; label: string }[];
+  }) =>
+    request<CatalogEntry>("/mcp-catalog", {
+      method: "POST",
+      body: JSON.stringify(entry),
+    }),
+  deleteCatalogEntry: (id: string) =>
+    request<{ ok: boolean }>(`/mcp-catalog/${id}`, { method: "DELETE" }),
+  getAssignments: (id: string) => request<Assignment[]>(`/containers/${id}/mcps`),
+  updateAssignments: (
+    id: string,
+    assignments: { catalog_id: string; bindings?: Record<string, string> }[]
+  ) =>
+    request<{ ok: boolean }>(`/containers/${id}/mcps`, {
+      method: "PUT",
+      body: JSON.stringify({ assignments }),
+    }),
+  startAuth: (id: string, cli: "claude" | "codex") =>
+    request<{ sessionId: string; note: string }>(`/containers/${id}/auth/${cli}`, {
+      method: "POST",
+    }),
+  getAuthSession: (sid: string) => request<AuthSessionState>(`/auth-sessions/${sid}`),
+  sendAuthInput: (sid: string, text: string) =>
+    request<{ ok: boolean }>(`/auth-sessions/${sid}/input`, {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+  killAuthSession: (sid: string) =>
+    request<{ ok: boolean }>(`/auth-sessions/${sid}`, { method: "DELETE" }),
+  listSecrets: () => request<SecretRef[]>("/secrets"),
+  putSecret: (ref: string, value: string) =>
+    request<{ ok: boolean }>("/secrets", {
+      method: "PUT",
+      body: JSON.stringify({ ref, value }),
+    }),
+};
