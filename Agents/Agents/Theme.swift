@@ -28,7 +28,6 @@ func platformColor(_ icon: String) -> Color {
     }
 }
 
-/// Small colored platform icon used in lists and forms.
 struct PlatformIcon: View {
     let icon: String
 
@@ -40,7 +39,28 @@ struct PlatformIcon: View {
     }
 }
 
-/// System-Settings-style colored tile for sidebar items.
+struct McpFavicon: View {
+    let entryID: String
+    let fallbackIcon: String
+    var size: CGFloat = 16
+
+    var body: some View {
+        AsyncImage(url: APIClient().faviconURL(entryID)) { phase in
+            if let image = phase.image {
+                image
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+            } else {
+                Image(systemName: platformSymbol(fallbackIcon))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(platformColor(fallbackIcon))
+            }
+        }
+        .frame(width: size, height: size)
+    }
+}
+
 struct IconTile: View {
     let color: Color
     let symbol: String
@@ -57,14 +77,12 @@ struct IconTile: View {
     }
 }
 
-/// Deterministic per-company color, so every tenant keeps its identity.
 func companyColor(_ name: String) -> Color {
     let palette: [Color] = [.blue, .purple, .pink, .orange, .teal, .indigo, .green, .cyan, .mint, .red]
     let hash = name.unicodeScalars.reduce(5381) { ($0 << 5) &+ $0 &+ Int($1.value) }
     return palette[abs(hash) % palette.count]
 }
 
-/// Colorful avatar tile with the company's initial, OrbStack-style.
 struct CompanyAvatar: View {
     let name: String
     var size: CGFloat = 26
@@ -81,7 +99,6 @@ struct CompanyAvatar: View {
     }
 }
 
-/// Container icon: uploaded image when present, colored initial otherwise.
 struct ContainerIcon: View {
     let container: AgentContainer
     var size: CGFloat = 26

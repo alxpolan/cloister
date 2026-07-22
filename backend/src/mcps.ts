@@ -3,7 +3,8 @@ import { readSecret } from "./crypto.js";
 
 export async function getAssignments(containerId: string): Promise<AssignmentRow[]> {
   const { rows } = await pool.query<AssignmentRow>(
-    `SELECT c.*, cm.container_id, cm.bindings_json
+    `SELECT c.id, c.key, c.label, c.icon, c.website, c.config_json, c.secrets_json,
+            c.created_at, cm.container_id, cm.bindings_json
      FROM container_mcps cm
      JOIN mcp_catalog c ON c.id = cm.catalog_id
      WHERE cm.container_id = $1
@@ -13,11 +14,6 @@ export async function getAssignments(containerId: string): Promise<AssignmentRow
   return rows;
 }
 
-/**
- * The MCP servers a container actually gets: catalog assignments first,
- * then any hand-written extras from mcp_config_json (which win on name
- * clash, as the explicit override).
- */
 export async function getEffectiveMcpServers(
   container: ContainerRow
 ): Promise<Record<string, unknown>> {
@@ -29,10 +25,6 @@ export async function getEffectiveMcpServers(
   return servers;
 }
 
-/**
- * Env vars required by assigned catalog servers, resolved from the
- * encrypted secret each binding points at.
- */
 export async function resolveBindingEnv(containerId: string): Promise<string[]> {
   const env: string[] = [];
   for (const a of await getAssignments(containerId)) {
@@ -46,12 +38,12 @@ export async function resolveBindingEnv(containerId: string): Promise<string[]> 
   return env;
 }
 
-/** Compact per-container summary for the dashboard list. */
 export async function assignmentSummary(containerId: string): Promise<
-  { key: string; label: string; icon: string; secretsOk: boolean }[]
+  { id: string; key: string; label: string; icon: string; secretsOk: boolean }[]
 > {
   const assignments = await getAssignments(containerId);
   return assignments.map((a) => ({
+    id: a.id,
     key: a.key,
     label: a.label,
     icon: a.icon,

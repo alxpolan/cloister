@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   Github,
   Instagram,
@@ -25,6 +26,30 @@ export function platformIcon(type: string, size = 14) {
     default:
       return <Globe size={size} className="text-neutral-600" />;
   }
+}
+
+export function McpFavicon({
+  entryId,
+  icon,
+  size = 14,
+}: {
+  entryId: string;
+  icon: string;
+  size?: number;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return platformIcon(icon, size);
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={`${API_URL}/mcp-catalog/${entryId}/favicon`}
+      alt=""
+      width={size}
+      height={size}
+      className="rounded-sm object-contain"
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 export function ContainerCard({
@@ -100,7 +125,7 @@ export function ContainerCard({
           <ul className="space-y-1.5">
             {container.mcps.map((m) => (
               <li key={m.key} className="flex items-center gap-2 text-xs">
-                {platformIcon(m.icon)}
+                <McpFavicon entryId={m.id} icon={m.icon} />
                 <span className="font-medium text-neutral-800">{m.label}</span>
                 {!m.secretsOk && (
                   <span className="ml-auto text-red-500">token missing</span>

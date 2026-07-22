@@ -95,22 +95,27 @@ struct APIClient: Sendable {
     }
 
     func createCatalogEntry(
-        key: String, label: String, icon: String,
+        key: String, label: String, icon: String, website: String?,
         config: [String: JSONValue], secrets: [SecretSpec]
     ) async throws {
         struct Payload: Encodable {
             let key: String, label: String, icon: String
+            let website: String?
             let config: [String: JSONValue]
             let secrets: [SecretSpec]
         }
         let _: CatalogEntry = try await request(
             "mcp-catalog", method: "POST",
-            body: encode(Payload(key: key, label: label, icon: icon, config: config, secrets: secrets))
+            body: encode(Payload(key: key, label: label, icon: icon, website: website, config: config, secrets: secrets))
         )
     }
 
     func deleteCatalogEntry(_ id: String) async throws {
         let _: OkResponse = try await request("mcp-catalog/\(id)", method: "DELETE")
+    }
+
+    func faviconURL(_ catalogID: String) -> URL {
+        baseURL.appendingPathComponent("mcp-catalog/\(catalogID)/favicon")
     }
 
     func assignments(for containerID: String) async throws -> [Assignment] {
@@ -184,7 +189,6 @@ final class AppModel: ObservableObject {
         loaded = true
     }
 
-    /** Catalog + secret refs change rarely; loaded at startup and after edits. */
     func loadConfig() async {
         catalog = (try? await api.listCatalog()) ?? catalog
         secrets = (try? await api.listSecrets()) ?? secrets

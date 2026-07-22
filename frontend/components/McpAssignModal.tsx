@@ -3,12 +3,12 @@
 import { useEffect, useState } from "react";
 import { api, type CatalogEntry, type Container, type SecretRef } from "@/lib/api";
 import { Button, inputClass, Modal } from "./ui";
-import { platformIcon } from "./ContainerCard";
+import { McpFavicon } from "./ContainerCard";
 
 interface DraftAssignment {
   enabled: boolean;
-  bindings: Record<string, string>; // env -> secret ref
-  newTokens: Record<string, string>; // env -> pasted plaintext (stored on save)
+  bindings: Record<string, string>;
+  newTokens: Record<string, string>;
 }
 
 export function McpAssignModal({
@@ -68,7 +68,6 @@ export function McpAssignModal({
         const draft = drafts[entry.id];
         if (!draft?.enabled) continue;
         const bindings = { ...draft.bindings };
-        // pasted tokens become secrets named <company>-<serverkey>[-n]
         for (const [env, token] of Object.entries(draft.newTokens)) {
           if (!token.trim()) continue;
           const multi = entry.secrets_json.length > 1;
@@ -106,7 +105,7 @@ export function McpAssignModal({
                   onChange={(e) => update(entry.id, { enabled: e.target.checked })}
                   className="h-3.5 w-3.5 accent-neutral-900"
                 />
-                {platformIcon(entry.icon, 15)}
+                <McpFavicon entryId={entry.id} icon={entry.icon} size={15} />
                 <span className="text-sm font-medium text-neutral-800">
                   {entry.label}
                 </span>

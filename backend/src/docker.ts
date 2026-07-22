@@ -6,18 +6,12 @@ import { readSecret } from "./crypto.js";
 import { renderConfigs, CONTAINER_WORKSPACE } from "./configgen.js";
 import { getEffectiveMcpServers, resolveBindingEnv } from "./mcps.js";
 
-export const docker = new Docker(); // uses /var/run/docker.sock
+export const docker = new Docker();
 
 export function containerName(company: string): string {
   return `${config.containerPrefix}${company}`;
 }
 
-/**
- * When the backend itself runs in a container, bind sources for agent
- * containers must be HOST paths. Instead of trusting an env var derived
- * from the caller's $PWD (fragile), ask the daemon where our own homes
- * mount really lives on the host.
- */
 export async function resolveHostHomesDir(): Promise<void> {
   if (config.hostHomesDir) return;
   try {
@@ -29,11 +23,9 @@ export async function resolveHostHomesDir(): Promise<void> {
       console.log(`resolved host homes dir: ${config.hostHomesDir}`);
     }
   } catch {
-    // not running inside a container — homesDir is already a host path
   }
 }
 
-/** Live state of the tenant container as reported by the Docker daemon. */
 export async function dockerState(
   company: string
 ): Promise<"running" | "stopped" | "missing"> {
@@ -46,11 +38,6 @@ export async function dockerState(
   }
 }
 
-/**
- * Resolve the env vars injected into a tenant container: one entry per
- * account that has a secret assigned. Plaintext exists only in this call
- * chain and inside the target container — never on disk, never in the DB.
- */
 export async function resolveEnv(containerId: string): Promise<string[]> {
   const { rows } = await pool.query<AccountRow>(
     "SELECT * FROM accounts WHERE container_id = $1",
@@ -69,11 +56,6 @@ export async function resolveEnv(containerId: string): Promise<string[]> {
   return env;
 }
 
-/**
- * Full env for a tenant: account-based injections plus catalog MCP bindings;
- * bindings win on name clash. Used at container start AND per /run exec, so
- * freshly captured tokens work without a restart.
- */
 export async function resolveAllEnv(containerId: string): Promise<string[]> {
   const accountEnv = await resolveEnv(containerId);
   const bindingEnv = await resolveBindingEnv(containerId);
@@ -87,14 +69,6 @@ export async function resolveAllEnv(containerId: string): Promise<string[]> {
 }
 
 export interface StartOptions {
-  /**
-   * Publish a path for the Codex ChatGPT login callback. codex binds its
-   * OAuth callback server to 127.0.0.1:1455 INSIDE the container, which a
-   * published port cannot reach directly — so we publish host 1455 to
-   * container port 1456 and run a tiny node TCP proxy in the container
-   * (0.0.0.0:1456 → 127.0.0.1:1455). Only one container can hold the host
-   * port at a time; a normal restart drops both port and proxy.
-   */
   codexAuthPort?: boolean;
 }
 
@@ -105,7 +79,6 @@ const CODEX_PROXY_JS =
   's.on("error",()=>c.destroy());c.on("error",()=>s.destroy());})' +
   '.listen(1456,"0.0.0.0");';
 
-/** Detached in-container bridge for the codex login callback. */
 export async function startCodexAuthProxy(company: string): Promise<void> {
   const container = docker.getContainer(containerName(company));
   const exec = await container.exec({
@@ -117,11 +90,6 @@ export async function startCodexAuthProxy(company: string): Promise<void> {
   await exec.start({ Detach: true });
 }
 
-/**
- * (Re)creates and starts the tenant container. Always recreates so that
- * refreshed secrets/env and regenerated configs are picked up. The mounted
- * home dir keeps all persistent state (auth, workspace) across recreates.
- */
 export async function startContainer(row: ContainerRow, opts: StartOptions = {}): Promise<void> {
   await renderConfigs(row, await getEffectiveMcpServers(row));
 
@@ -147,7 +115,6 @@ export async function startContainer(row: ContainerRow, opts: StartOptions = {})
     ...(opts.codexAuthPort ? { ExposedPorts: { "1456/tcp": {} } } : {}),
     HostConfig: {
       Binds: [`${hostHomePath(row.company)}:/home/node`],
-      // Deliberately NO docker socket, no extra privileges.
       RestartPolicy: { Name: "unless-stopped" },
       ...(opts.codexAuthPort
         ? { PortBindings: { "1456/tcp": [{ HostIp: "127.0.0.1", HostPort: "1455" }] } }
@@ -182,10 +149,6 @@ export interface ExecResult {
   exitCode: number;
 }
 
-/**
- * Runs a command inside the tenant container and captures output — the
- * building block for the Paperclip /run endpoint.
- */
 export async function execInContainer(
   company: string,
   cmd: string[],

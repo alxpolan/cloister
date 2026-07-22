@@ -233,7 +233,7 @@ struct CatalogList: View {
         List(selection: $selection) {
             ForEach(model.catalog) { entry in
                 HStack(spacing: 8) {
-                    PlatformIcon(icon: entry.icon)
+                    McpFavicon(entryID: entry.id, fallbackIcon: entry.icon)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(entry.label)
                         Text(entry.key)

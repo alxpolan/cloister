@@ -55,11 +55,19 @@ export async function migrate(): Promise<void> {
     ALTER TABLE containers ADD COLUMN IF NOT EXISTS icon bytea;
     ALTER TABLE containers ADD COLUMN IF NOT EXISTS icon_mime text;
     ALTER TABLE containers ADD COLUMN IF NOT EXISTS icon_updated_at timestamptz;
+
+    ALTER TABLE mcp_catalog ADD COLUMN IF NOT EXISTS website text;
+    ALTER TABLE mcp_catalog ADD COLUMN IF NOT EXISTS favicon bytea;
+    ALTER TABLE mcp_catalog ADD COLUMN IF NOT EXISTS favicon_mime text;
+    ALTER TABLE mcp_catalog ADD COLUMN IF NOT EXISTS favicon_fetched_at timestamptz;
+
+    UPDATE mcp_catalog SET website = 'github.com'     WHERE key = 'github'     AND website IS NULL;
+    UPDATE mcp_catalog SET website = 'notion.so'      WHERE key = 'notion'     AND website IS NULL;
+    UPDATE mcp_catalog SET website = 'revenuecat.com' WHERE key = 'revenuecat' AND website IS NULL;
   `);
   await seedCatalog();
 }
 
-/** Preset servers so a fresh install is usable without hand-writing JSON. */
 async function seedCatalog(): Promise<void> {
   const { rows } = await pool.query("SELECT count(*)::int AS n FROM mcp_catalog");
   if (rows[0].n > 0) return;
@@ -118,14 +126,18 @@ export interface CatalogRow {
   key: string;
   label: string;
   icon: string;
+  website: string | null;
   config_json: Record<string, unknown>;
   secrets_json: { env: string; label: string }[];
   created_at: string;
 }
 
+export const CATALOG_COLS =
+  "id, key, label, icon, website, config_json, secrets_json, created_at";
+
 export interface AssignmentRow extends CatalogRow {
   container_id: string;
-  bindings_json: Record<string, string>; // env var -> secret ref
+  bindings_json: Record<string, string>;
 }
 
 export interface AccountRow {

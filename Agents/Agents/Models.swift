@@ -39,11 +39,11 @@ enum JSONValue: Codable, Hashable {
 // MARK: - API models
 
 struct McpSummary: Codable, Hashable, Identifiable {
+    let id: String
     let key: String
     let label: String
     let icon: String
     let secretsOk: Bool
-    var id: String { key }
 }
 
 struct McpConfigJson: Codable, Hashable {
@@ -82,11 +82,12 @@ struct CatalogEntry: Codable, Identifiable, Hashable {
     let key: String
     let label: String
     let icon: String
+    let website: String?
     let configJson: [String: JSONValue]
     let secretsJson: [SecretSpec]
 
     enum CodingKeys: String, CodingKey {
-        case id, key, label, icon
+        case id, key, label, icon, website
         case configJson = "config_json"
         case secretsJson = "secrets_json"
     }

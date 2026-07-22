@@ -105,6 +105,7 @@ struct NewCatalogEntrySheet: View {
     @State private var key = ""
     @State private var label = ""
     @State private var icon = "globe"
+    @State private var website = ""
     @State private var configText = ""
     @State private var secretsText = ""
     @State private var error = ""
@@ -116,7 +117,8 @@ struct NewCatalogEntrySheet: View {
                     TextField("Key", text: $key, prompt: Text("linkedin"))
                         .onChange(of: key) { _, v in key = v.lowercased() }
                     TextField("Label", text: $label, prompt: Text("LinkedIn"))
-                    Picker("Icon", selection: $icon) {
+                    TextField("Website (for favicon)", text: $website, prompt: Text("linkedin.com — optional"))
+                    Picker("Fallback Icon", selection: $icon) {
                         ForEach(["globe", "github", "instagram", "linkedin"], id: \.self) {
                             Text($0).tag($0)
                         }
@@ -171,7 +173,11 @@ struct NewCatalogEntrySheet: View {
             }
         Task {
             do {
-                try await model.api.createCatalogEntry(key: key, label: label, icon: icon, config: cfg, secrets: secrets)
+                try await model.api.createCatalogEntry(
+                    key: key, label: label, icon: icon,
+                    website: website.trimmingCharacters(in: .whitespaces).isEmpty ? nil : website.trimmingCharacters(in: .whitespaces),
+                    config: cfg, secrets: secrets
+                )
                 await model.loadConfig()
                 dismiss()
             } catch { self.error = error.localizedDescription }
@@ -308,7 +314,6 @@ struct AuthSheet: View {
                 if !s.running { break }
                 try? await Task.sleep(for: .seconds(1))
             }
-            // ended cleanly → show success and close on our own
             if state?.exitCode == 0 {
                 withAnimation { succeeded = true }
                 await model.refresh()

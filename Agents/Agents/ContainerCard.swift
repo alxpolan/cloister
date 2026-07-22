@@ -136,7 +136,7 @@ private struct ContainerInfoForm: View {
                         }
                     } label: {
                         HStack(spacing: 8) {
-                            PlatformIcon(icon: mcp.icon)
+                            McpFavicon(entryID: mcp.id, fallbackIcon: mcp.icon)
                             Text(mcp.label)
                         }
                     }
@@ -289,7 +289,7 @@ struct McpAssignmentEditor: View {
             set: { drafts[entry.id, default: Draft()].enabled = $0; saved = false }
         )) {
             HStack(spacing: 8) {
-                PlatformIcon(icon: entry.icon)
+                McpFavicon(entryID: entry.id, fallbackIcon: entry.icon)
                 Text(entry.label)
                 Text(entry.key)
                     .font(.caption.monospaced())
@@ -401,9 +401,16 @@ struct CatalogDetail: View {
     var body: some View {
         Form {
             Section {
-                LabeledContent("Label", value: entry.label)
+                LabeledContent("Label") {
+                    HStack(spacing: 8) {
+                        McpFavicon(entryID: entry.id, fallbackIcon: entry.icon, size: 18)
+                        Text(entry.label)
+                    }
+                }
                 LabeledContent("Key", value: entry.key)
-                LabeledContent("Icon", value: entry.icon)
+                if let website = entry.website {
+                    LabeledContent("Website", value: website)
+                }
             }
             Section("Required Secrets") {
                 if entry.secretsJson.isEmpty {

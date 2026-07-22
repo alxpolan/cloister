@@ -12,6 +12,7 @@ export interface Account {
 }
 
 export interface McpSummary {
+  id: string;
   key: string;
   label: string;
   icon: string;
@@ -39,6 +40,7 @@ export interface CatalogEntry {
   key: string;
   label: string;
   icon: string;
+  website: string | null;
   config_json: Record<string, unknown>;
   secrets_json: { env: string; label: string }[];
 }
@@ -64,8 +66,6 @@ export interface AuthSessionState {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
-    // only claim JSON when there is a body — Fastify rejects an empty
-    // JSON-typed body with FST_ERR_CTP_EMPTY_JSON_BODY
     headers: init?.body
       ? { "Content-Type": "application/json", ...init?.headers }
       : init?.headers,
@@ -108,6 +108,7 @@ export const api = {
     key: string;
     label: string;
     icon?: string;
+    website?: string;
     config: Record<string, unknown>;
     secrets?: { env: string; label: string }[];
   }) =>

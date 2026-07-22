@@ -1,5 +1,11 @@
 import type { FastifyInstance } from "fastify";
-import { pool, type AccountRow, type CatalogRow, type ContainerRow } from "./db.js";
+import {
+  CATALOG_COLS,
+  pool,
+  type AccountRow,
+  type CatalogRow,
+  type ContainerRow,
+} from "./db.js";
 import { assignmentSummary, getAssignments } from "./mcps.js";
 import {
   dockerState,
@@ -24,6 +30,23 @@ import {
 
 const COMPANY_RE = /^[a-z0-9][a-z0-9-]{1,40}$/;
 
+function faviconDomain(entry: {
+  key: string;
+  website: string | null;
+  config_json: Record<string, unknown>;
+}): string {
+  if (entry.website) return entry.website;
+  const url = entry.config_json?.url;
+  if (typeof url === "string") {
+    try {
+      const host = new URL(url).hostname;
+      return host.split(".").slice(-2).join(".");
+    } catch {
+    }
+  }
+  return `${entry.key}.com`;
+}
+
 async function getContainerRow(id: string): Promise<ContainerRow | null> {
   const { rows } = await pool.query<ContainerRow>(
     "SELECT * FROM containers WHERE id = $1",
@@ -45,7 +68,6 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const { rows: accounts } = await pool.query<AccountRow>(
       "SELECT * FROM accounts ORDER BY created_at"
     );
-    // containers with a captured setup-token (env-injected auth)
     const { rows: tokenRows } = await pool.query<{ container_id: string }>(
       `SELECT a.container_id FROM accounts a
        JOIN secrets s ON s.ref = a.secret_ref
@@ -124,7 +146,6 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!row) return reply.code(404).send({ error: "not found" });
     await removeContainer(row);
     await pool.query("DELETE FROM containers WHERE id = $1", [row.id]);
-    // The home dir (auth state!) is intentionally kept on disk.
     return { ok: true };
   });
 
@@ -193,9 +214,53 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/mcp-catalog", async () => {
     const { rows } = await pool.query<CatalogRow>(
-      "SELECT * FROM mcp_catalog ORDER BY label"
+      `SELECT ${CATALOG_COLS} FROM mcp_catalog ORDER BY label`
     );
     return rows;
+  });
+
+  // ---------- catalog favicons (fetched like Claude does, cached in DB) ----
+
+  app.get<{ Params: { id: string } }>("/mcp-catalog/:id/favicon", async (req, reply) => {
+    const { rows } = await pool.query(
+      `SELECT ${CATALOG_COLS}, favicon, favicon_mime, favicon_fetched_at
+       FROM mcp_catalog WHERE id = $1`,
+      [req.params.id]
+    );
+    const entry = rows[0];
+    if (!entry) return reply.code(404).send({ error: "not found" });
+
+    const fresh =
+      entry.favicon &&
+      entry.favicon_fetched_at &&
+      Date.now() - new Date(entry.favicon_fetched_at).getTime() < 7 * 24 * 3600 * 1000;
+
+    if (!fresh) {
+      const domain = faviconDomain(entry);
+      try {
+        const res = await fetch(
+          `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`,
+          { signal: AbortSignal.timeout(5000) }
+        );
+        if (res.ok) {
+          const buf = Buffer.from(await res.arrayBuffer());
+          const mime = res.headers.get("content-type") ?? "image/png";
+          await pool.query(
+            "UPDATE mcp_catalog SET favicon = $1, favicon_mime = $2, favicon_fetched_at = now() WHERE id = $3",
+            [buf, mime, entry.id]
+          );
+          entry.favicon = buf;
+          entry.favicon_mime = mime;
+        }
+      } catch {
+      }
+    }
+
+    if (!entry.favicon) return reply.code(404).send({ error: "no favicon" });
+    return reply
+      .header("Cache-Control", "public, max-age=86400")
+      .type(entry.favicon_mime ?? "image/png")
+      .send(entry.favicon);
   });
 
   app.post<{
@@ -203,19 +268,27 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       key: string;
       label: string;
       icon?: string;
+      website?: string;
       config: Record<string, unknown>;
       secrets?: { env: string; label: string }[];
     };
   }>("/mcp-catalog", async (req, reply) => {
-    const { key, label, icon, config: cfg, secrets } = req.body ?? ({} as any);
+    const { key, label, icon, website, config: cfg, secrets } = req.body ?? ({} as any);
     if (!key || !label || !cfg || typeof cfg !== "object") {
       return reply.code(400).send({ error: "key, label and config required" });
     }
     try {
       const { rows } = await pool.query<CatalogRow>(
-        `INSERT INTO mcp_catalog (key, label, icon, config_json, secrets_json)
-         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-        [key, label, icon ?? "globe", JSON.stringify(cfg), JSON.stringify(secrets ?? [])]
+        `INSERT INTO mcp_catalog (key, label, icon, website, config_json, secrets_json)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING ${CATALOG_COLS}`,
+        [
+          key,
+          label,
+          icon ?? "globe",
+          website?.trim() || null,
+          JSON.stringify(cfg),
+          JSON.stringify(secrets ?? []),
+        ]
       );
       return reply.code(201).send(rows[0]);
     } catch (err: any) {
@@ -353,7 +426,6 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // ---------- secrets ----------
 
   app.get("/secrets", async () => {
-    // refs only — plaintext never leaves the encrypted store
     return listSecretRefs();
   });
 
@@ -381,9 +453,6 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: "cli must be claude or codex" });
       }
 
-      // codex login needs its localhost:1455 OAuth callback reachable from
-      // the host browser → restart the container with the port published.
-      // claude setup-token is pure URL + paste-back, no port needed.
       if (cli === "codex") {
         await startContainer(row, { codexAuthPort: true });
         await startCodexAuthProxy(row.company);
@@ -418,7 +487,6 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       if (typeof text !== "string") {
         return reply.code(400).send({ error: "body must be { text: string }" });
       }
-      // empty text = bare Enter (e.g. "Press Enter to retry")
       writeToSession(s, text);
       return { ok: true };
     }
@@ -459,7 +527,6 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         ? ["codex", "exec", "--skip-git-repo-check", prompt]
         : ["claude", "-p", prompt, "--output-format", "text", "--dangerously-skip-permissions"];
 
-    // resolve env per exec so freshly captured tokens apply without restart
     const env = await resolveAllEnv(row.id);
     const result = await execInContainer(company, cmd, timeoutMs, env);
     return {

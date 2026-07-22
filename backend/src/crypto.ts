@@ -2,8 +2,6 @@ import { createRequire } from "node:module";
 import { config } from "./config.js";
 import { pool } from "./db.js";
 
-// The ESM build of libsodium-wrappers ships a broken relative import
-// (libsodium.mjs is missing from the package), so load the CJS build.
 const require = createRequire(import.meta.url);
 const sodium: typeof import("libsodium-wrappers") = require("libsodium-wrappers");
 

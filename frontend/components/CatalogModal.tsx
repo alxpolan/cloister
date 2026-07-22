@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { api, type CatalogEntry } from "@/lib/api";
 import { Button, inputClass, labelClass, Modal } from "./ui";
-import { platformIcon } from "./ContainerCard";
+import { McpFavicon } from "./ContainerCard";
 
 const CONFIG_PLACEHOLDER = `{"command":"npx","args":["-y","@some/mcp-server"],"env":{"MY_TOKEN":"\${MY_TOKEN}"}}
 or remote: {"type":"http","url":"https://mcp.example.com/mcp"}`;
@@ -16,6 +16,7 @@ export function CatalogModal({ onClose }: { onClose: () => void }) {
   const [key, setKey] = useState("");
   const [label, setLabel] = useState("");
   const [icon, setIcon] = useState("globe");
+  const [website, setWebsite] = useState("");
   const [configText, setConfigText] = useState("");
   const [secretsText, setSecretsText] = useState("");
 
@@ -35,7 +36,6 @@ export function CatalogModal({ onClose }: { onClose: () => void }) {
       setError("Config is not valid JSON");
       return;
     }
-    // one "ENV_VAR = Label" per line
     const secrets = secretsText
       .split("\n")
       .map((l) => l.trim())
@@ -45,9 +45,17 @@ export function CatalogModal({ onClose }: { onClose: () => void }) {
         return { env: env.trim(), label: rest.join("=").trim() || env.trim() };
       });
     try {
-      await api.createCatalogEntry({ key, label, icon, config: cfg, secrets });
+      await api.createCatalogEntry({
+        key,
+        label,
+        icon,
+        website: website.trim() || undefined,
+        config: cfg,
+        secrets,
+      });
       setKey("");
       setLabel("");
+      setWebsite("");
       setConfigText("");
       setSecretsText("");
       setAdding(false);
@@ -67,7 +75,7 @@ export function CatalogModal({ onClose }: { onClose: () => void }) {
         <ul className="divide-y divide-neutral-100 rounded border border-neutral-200">
           {entries.map((e) => (
             <li key={e.id} className="flex items-center gap-2.5 px-3 py-2 text-xs">
-              {platformIcon(e.icon, 14)}
+              <McpFavicon entryId={e.id} icon={e.icon} />
               <span className="font-medium text-neutral-800">{e.label}</span>
               <span className="font-mono text-neutral-400">{e.key}</span>
               <span className="text-neutral-400">
@@ -120,7 +128,7 @@ export function CatalogModal({ onClose }: { onClose: () => void }) {
                 />
               </div>
               <div>
-                <label className={labelClass}>Icon</label>
+                <label className={labelClass}>Fallback icon</label>
                 <select
                   className={inputClass}
                   value={icon}
@@ -133,6 +141,15 @@ export function CatalogModal({ onClose }: { onClose: () => void }) {
                   ))}
                 </select>
               </div>
+            </div>
+            <div>
+              <label className={labelClass}>Website (for favicon, optional)</label>
+              <input
+                className={inputClass}
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                placeholder="linkedin.com"
+              />
             </div>
             <div>
               <label className={labelClass}>Server config (Claude-style JSON)</label>

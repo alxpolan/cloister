@@ -8,8 +8,6 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      # host port 5433 to avoid clashing with a host-level postgres on 5432;
-      # exposed for local inspection / dev mode only
       - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U agent -d agent_containers"]
@@ -23,13 +21,9 @@ services:
       DATABASE_URL: postgres://agent:agent@postgres:5432/agent_containers
       SECRETS_KEY: ${SECRETS_KEY:?run 'openssl rand -hex 32' and put SECRETS_KEY=... into .env}
       HOMES_DIR: /app/homes
-      # The host path of ./homes (needed as bind source for agent containers)
-      # is auto-detected from the backend's own mounts at startup.
-      # Set HOST_HOMES_DIR to override.
       AGENT_IMAGE: agent-base:latest
     volumes:
       - ./homes:/app/homes
-      # Only the backend talks to Docker. Agent containers never get this socket.
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "8080:8080"
@@ -41,7 +35,6 @@ services:
     build:
       context: ./frontend
       args:
-        # baked into the bundle at build time; must be reachable from the browser
         NEXT_PUBLIC_API_URL: http://localhost:8080
     ports:
       - "3000:3000"
