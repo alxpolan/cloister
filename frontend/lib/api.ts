@@ -64,6 +64,25 @@ export interface AuthSessionState {
   output: string;
 }
 
+export interface RunSummary {
+  id: string;
+  company: string;
+  cli: string;
+  model: string | null;
+  source: string;
+  status: "running" | "succeeded" | "failed";
+  exit_code: number | null;
+  prompt: string;
+  started_at: string;
+  finished_at: string | null;
+}
+
+export interface RunDetail extends RunSummary {
+  stdout: string;
+  stderr: string;
+  error: string | null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
@@ -143,6 +162,9 @@ export const api = {
     }),
   killAuthSession: (sid: string) =>
     request<{ ok: boolean }>(`/auth-sessions/${sid}`, { method: "DELETE" }),
+  listRuns: (company?: string) =>
+    request<RunSummary[]>(`/runs${company ? `?company=${encodeURIComponent(company)}` : ""}`),
+  getRun: (id: string) => request<RunDetail>(`/runs/${id}`),
   listSecrets: () => request<SecretRef[]>("/secrets"),
   putSecret: (ref: string, value: string) =>
     request<{ ok: boolean }>("/secrets", {

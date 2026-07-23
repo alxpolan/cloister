@@ -12,6 +12,11 @@ RUN npm install -g @anthropic-ai/claude-code @openai/codex mcp-remote
 
 USER node
 ENV HOME=/home/node
+# Containers run as unprivileged node (uid 1000) and can't write the global
+# npm prefix. CLI versions are pinned to this image and updated by rebuilding
+# it, so disable the runtime auto-updaters (they'd only fail noisily).
+ENV DISABLE_AUTOUPDATER=1
+ENV CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 WORKDIR /home/node/workspace
 
 CMD ["sleep", "infinity"]

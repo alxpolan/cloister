@@ -2,6 +2,7 @@ import SwiftUI
 
 enum SidebarItem: Hashable {
     case containers
+    case runs
     case catalog
     case secrets
 }
@@ -26,9 +27,11 @@ struct ContentView: View {
     @EnvironmentObject private var model: AppModel
     @State private var sidebar: SidebarItem? = .containers
     @State private var selectedContainerID: String?
+    @State private var selectedRunID: String?
     @State private var selectedCatalogID: String?
     @State private var selectedSecretRef: String?
     @State private var sheet: ActiveSheet?
+    @State private var detailDeleteTarget: AgentContainer?
 
     var body: some View {
         NavigationSplitView {
@@ -40,6 +43,12 @@ struct ContentView: View {
                         IconTile(color: .blue, symbol: "shippingbox.fill")
                     }
                     .tag(SidebarItem.containers)
+                    Label {
+                        Text("Runs")
+                    } icon: {
+                        IconTile(color: .purple, symbol: "scroll.fill")
+                    }
+                    .tag(SidebarItem.runs)
                 }
                 Section("Configuration") {
                     Label {
@@ -64,6 +73,8 @@ struct ContentView: View {
                     ContainerList(selection: $selectedContainerID) {
                         sheet = .newContainer
                     }
+                case .runs:
+                    RunList(selection: $selectedRunID)
                 case .catalog:
                     CatalogList(selection: $selectedCatalogID) {
                         sheet = .newCatalogEntry
@@ -79,11 +90,19 @@ struct ContentView: View {
             switch sidebar ?? .containers {
             case .containers:
                 if let c = model.containers.first(where: { $0.id == selectedContainerID }) {
-                    ContainerDetail(container: c) { cli in
+                    ContainerDetail(container: c, onLogin: { cli in
                         sheet = .auth(c, cli)
-                    }
+                    }, onDelete: {
+                        detailDeleteTarget = c
+                    })
                 } else {
                     placeholder("Select a container")
+                }
+            case .runs:
+                if let id = selectedRunID {
+                    RunDetailView(runId: id)
+                } else {
+                    placeholder("Select a run")
                 }
             case .catalog:
                 if let entry = model.catalog.first(where: { $0.id == selectedCatalogID }) {
@@ -107,6 +126,20 @@ struct ContentView: View {
             case .newSecret: NewSecretSheet()
             case .auth(let c, let cli): AuthSheet(container: c, cli: cli)
             }
+        }
+        .confirmationDialog(
+            "Remove “\(detailDeleteTarget?.name ?? "")”?",
+            isPresented: Binding(get: { detailDeleteTarget != nil }, set: { if !$0 { detailDeleteTarget = nil } })
+        ) {
+            Button("Remove Container", role: .destructive) {
+                if let c = detailDeleteTarget {
+                    if selectedContainerID == c.id { selectedContainerID = nil }
+                    model.perform(c.id) { try await model.api.delete(c.id) }
+                }
+                detailDeleteTarget = nil
+            }
+        } message: {
+            Text("The home directory with all auth state stays on disk.")
         }
     }
 

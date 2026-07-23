@@ -58,6 +58,9 @@ export async function migrate(): Promise<void> {
 
     ALTER TABLE containers ADD COLUMN IF NOT EXISTS git_name text;
     ALTER TABLE containers ADD COLUMN IF NOT EXISTS git_email text;
+    ALTER TABLE containers ADD COLUMN IF NOT EXISTS mem_mb integer;
+    ALTER TABLE containers ADD COLUMN IF NOT EXISTS cpus real;
+    ALTER TABLE containers ADD COLUMN IF NOT EXISTS pids_limit integer;
 
     ALTER TABLE mcp_catalog ADD COLUMN IF NOT EXISTS website text;
     ALTER TABLE mcp_catalog ADD COLUMN IF NOT EXISTS favicon bytea;
@@ -67,8 +70,41 @@ export async function migrate(): Promise<void> {
     UPDATE mcp_catalog SET website = 'github.com'     WHERE key = 'github'     AND website IS NULL;
     UPDATE mcp_catalog SET website = 'notion.so'      WHERE key = 'notion'     AND website IS NULL;
     UPDATE mcp_catalog SET website = 'revenuecat.com' WHERE key = 'revenuecat' AND website IS NULL;
+
+    CREATE TABLE IF NOT EXISTS runs (
+      id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      company      text NOT NULL,
+      cli          text NOT NULL,
+      model        text,
+      source       text NOT NULL DEFAULT 'api',
+      prompt       text NOT NULL,
+      status       text NOT NULL DEFAULT 'running',
+      exit_code    integer,
+      stdout       text NOT NULL DEFAULT '',
+      stderr       text NOT NULL DEFAULT '',
+      error        text,
+      started_at   timestamptz NOT NULL DEFAULT now(),
+      finished_at  timestamptz
+    );
+    CREATE INDEX IF NOT EXISTS runs_company_started_idx ON runs (company, started_at DESC);
   `);
   await seedCatalog();
+}
+
+export interface RunRow {
+  id: string;
+  company: string;
+  cli: string;
+  model: string | null;
+  source: string;
+  prompt: string;
+  status: "running" | "succeeded" | "failed";
+  exit_code: number | null;
+  stdout: string;
+  stderr: string;
+  error: string | null;
+  started_at: string;
+  finished_at: string | null;
 }
 
 async function seedCatalog(): Promise<void> {
@@ -123,6 +159,9 @@ export interface ContainerRow {
   mcp_config_json: { mcpServers: Record<string, unknown> };
   git_name: string | null;
   git_email: string | null;
+  mem_mb: number | null;
+  cpus: number | null;
+  pids_limit: number | null;
   created_at: string;
 }
 

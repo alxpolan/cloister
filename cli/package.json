@@ -1,0 +1,8 @@
+{
+  "name": "agent-containers-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "agents": "cli.mjs" },
+  "description": "Drop into an isolated Claude Code / Codex session per company"
+}

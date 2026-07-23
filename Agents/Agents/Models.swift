@@ -65,6 +65,7 @@ struct AgentContainer: Codable, Identifiable, Hashable {
     let iconVersion: Double?
     let gitName: String?
     let gitEmail: String?
+    let resources: ContainerResources?
 
     var isRunning: Bool { status == "running" }
     var customServerCount: Int { mcpConfigJson?.mcpServers?.count ?? 0 }
@@ -72,10 +73,17 @@ struct AgentContainer: Codable, Identifiable, Hashable {
     enum CodingKeys: String, CodingKey {
         case id, name, company, status, claudeAuthenticated, codexAuthenticated, mcps
         case mcpConfigJson = "mcp_config_json"
-        case hasIcon, iconVersion
+        case hasIcon, iconVersion, resources
         case gitName = "git_name"
         case gitEmail = "git_email"
     }
+}
+
+struct ContainerResources: Codable, Hashable {
+    let memMb: Double
+    let cpus: Double
+    let pidsLimit: Double
+    let isDefault: Bool
 }
 
 struct SecretSpec: Codable, Hashable {
@@ -118,6 +126,43 @@ struct SecretRef: Codable, Identifiable, Hashable {
     enum CodingKeys: String, CodingKey {
         case ref
         case updatedAt = "updated_at"
+    }
+}
+
+struct RunSummary: Codable, Identifiable, Hashable {
+    let id: String
+    let company: String
+    let cli: String
+    let model: String?
+    let status: String
+    let exitCode: Int?
+    let prompt: String
+    let startedAt: String
+    let finishedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, company, cli, model, status, prompt
+        case exitCode = "exit_code"
+        case startedAt = "started_at"
+        case finishedAt = "finished_at"
+    }
+}
+
+struct RunDetail: Codable {
+    let id: String
+    let company: String
+    let cli: String
+    let model: String?
+    let status: String
+    let exitCode: Int?
+    let prompt: String
+    let stdout: String
+    let stderr: String
+    let error: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, company, cli, model, status, prompt, stdout, stderr, error
+        case exitCode = "exit_code"
     }
 }
 

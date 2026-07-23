@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { KeyRound, Plug, Plus, RefreshCw } from "lucide-react";
+import { KeyRound, Plug, Plus, RefreshCw, ScrollText } from "lucide-react";
 import { api, type Container } from "@/lib/api";
 import { Button } from "@/components/ui";
 import { SummaryBar } from "@/components/SummaryBar";
@@ -10,12 +10,14 @@ import { McpConfigModal, NewContainerModal, SecretsModal } from "@/components/di
 import { AuthModal } from "@/components/AuthModal";
 import { McpAssignModal } from "@/components/McpAssignModal";
 import { CatalogModal } from "@/components/CatalogModal";
+import { RunsModal } from "@/components/RunsModal";
 
 type ModalState =
   | { kind: "none" }
   | { kind: "new" }
   | { kind: "secrets" }
   | { kind: "catalog" }
+  | { kind: "runs"; company?: string }
   | { kind: "mcps"; container: Container }
   | { kind: "mcp-raw"; container: Container }
   | { kind: "auth"; container: Container; cli: string };
@@ -66,6 +68,10 @@ export default function Dashboard() {
           <Button onClick={refresh} title="Refresh">
             <RefreshCw size={12} />
             Refresh
+          </Button>
+          <Button onClick={() => setModal({ kind: "runs" })}>
+            <ScrollText size={12} />
+            Runs
           </Button>
           <Button onClick={() => setModal({ kind: "catalog" })}>
             <Plug size={12} />
@@ -129,6 +135,9 @@ export default function Dashboard() {
       )}
       {modal.kind === "catalog" && (
         <CatalogModal onClose={() => setModal({ kind: "none" })} />
+      )}
+      {modal.kind === "runs" && (
+        <RunsModal company={modal.company} onClose={() => setModal({ kind: "none" })} />
       )}
       {modal.kind === "mcps" && (
         <McpAssignModal

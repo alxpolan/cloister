@@ -81,6 +81,14 @@ struct APIClient: Sendable {
         )
     }
 
+    func updateResources(_ containerID: String, memMb: Double?, cpus: Double?, pidsLimit: Double?) async throws {
+        struct Payload: Encodable { let memMb: Double?, cpus: Double?, pidsLimit: Double? }
+        let _: OkResponse = try await request(
+            "containers/\(containerID)/resources", method: "PUT",
+            body: encode(Payload(memMb: memMb, cpus: cpus, pidsLimit: pidsLimit))
+        )
+    }
+
     // MARK: container icons
 
     func iconURL(_ containerID: String, version: Double?) -> URL {
@@ -150,6 +158,17 @@ struct APIClient: Sendable {
         )
     }
 
+    // MARK: runs
+
+    func listRuns(company: String? = nil) async throws -> [RunSummary] {
+        let q = company.map { "?company=\($0.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0)" } ?? ""
+        return try await request("runs\(q)")
+    }
+
+    func getRun(_ id: String) async throws -> RunDetail {
+        try await request("runs/\(id)")
+    }
+
     // MARK: secrets
 
     func listSecrets() async throws -> [SecretRef] {
@@ -190,6 +209,7 @@ final class AppModel: ObservableObject {
     @Published var containers: [AgentContainer] = []
     @Published var catalog: [CatalogEntry] = []
     @Published var secrets: [SecretRef] = []
+    @Published var runs: [RunSummary] = []
     @Published var loaded = false
     @Published var errorMessage: String?
     @Published var busyContainerIDs: Set<String> = []
@@ -201,12 +221,17 @@ final class AppModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+        runs = (try? await api.listRuns()) ?? runs
         loaded = true
     }
 
     func loadConfig() async {
         catalog = (try? await api.listCatalog()) ?? catalog
         secrets = (try? await api.listSecrets()) ?? secrets
+    }
+
+    func loadRuns() async {
+        runs = (try? await api.listRuns()) ?? runs
     }
 
     func pollLoop() async {

@@ -1,15 +1,17 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-// MARK: - Container detail (right pane): Info / MCPs tabs
+// MARK: - Container detail (right pane): Info / MCPs / Settings tabs
 
 struct ContainerDetail: View {
     let container: AgentContainer
     let onLogin: (String) -> Void
+    var onDelete: (() -> Void)? = nil
 
     enum Tab: String, CaseIterable {
         case info = "Info"
         case mcps = "MCPs"
+        case settings = "Settings"
     }
 
     @EnvironmentObject private var model: AppModel
@@ -22,6 +24,9 @@ struct ContainerDetail: View {
                 ContainerInfoForm(container: container, onLogin: onLogin)
             case .mcps:
                 McpAssignmentEditor(container: container)
+                    .id(container.id)
+            case .settings:
+                ContainerSettingsForm(container: container, onDelete: onDelete)
                     .id(container.id)
             }
         }
@@ -65,8 +70,6 @@ private struct ContainerInfoForm: View {
     let container: AgentContainer
     let onLogin: (String) -> Void
     @EnvironmentObject private var model: AppModel
-    @State private var showIconPicker = false
-    @State private var iconError = ""
 
     var body: some View {
         Form {
@@ -93,34 +96,10 @@ private struct ContainerInfoForm: View {
                 }
             }
 
-            Section("Icon") {
-                LabeledContent("Custom Icon") {
-                    HStack(spacing: 10) {
-                        ContainerIcon(container: container, size: 32)
-                        Button("Choose…") { showIconPicker = true }
-                            .controlSize(.small)
-                        if container.hasIcon == true {
-                            Button("Remove") {
-                                Task {
-                                    try? await model.api.deleteIcon(container.id)
-                                    await model.refresh()
-                                }
-                            }
-                            .controlSize(.small)
-                        }
-                    }
-                }
-                if !iconError.isEmpty {
-                    Text(iconError).font(.caption).foregroundStyle(.red)
-                }
-            }
-
             Section("Command Line Tools") {
                 cliRow(name: "Claude Code", cli: "claude", ok: container.claudeAuthenticated)
                 cliRow(name: "Codex", cli: "codex", ok: container.codexAuthenticated)
             }
-
-            GitIdentitySection(container: container)
 
             Section("MCP Servers") {
                 if container.mcps.isEmpty && container.customServerCount == 0 {
@@ -167,15 +146,81 @@ private struct ContainerInfoForm: View {
             }
         }
         .formStyle(.grouped)
-        .fileImporter(
-            isPresented: $showIconPicker,
-            allowedContentTypes: [.image]
-        ) { result in
+    }
+
+    private func cliRow(name: String, cli: String, ok: Bool) -> some View {
+        LabeledContent {
+            HStack(spacing: 10) {
+                Text(ok ? "Authenticated" : "Not authenticated")
+                    .foregroundStyle(ok ? Color.primary : Color.secondary)
+                if container.isRunning {
+                    Button(ok ? "Re-login…" : "Login…") {
+                        onLogin(cli)
+                    }
+                    .controlSize(.small)
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: ok ? "checkmark.seal.fill" : "xmark.seal")
+                    .foregroundStyle(ok ? .green : .secondary)
+                Text(name)
+            }
+        }
+    }
+}
+
+// MARK: - Settings tab
+
+private struct ContainerSettingsForm: View {
+    let container: AgentContainer
+    let onDelete: (() -> Void)?
+    @EnvironmentObject private var model: AppModel
+    @State private var showIconPicker = false
+    @State private var iconError = ""
+
+    var body: some View {
+        Form {
+            Section("Icon") {
+                LabeledContent("Custom Icon") {
+                    HStack(spacing: 10) {
+                        ContainerIcon(container: container, size: 32)
+                        Button("Choose…") { showIconPicker = true }
+                            .controlSize(.small)
+                        if container.hasIcon == true {
+                            Button("Remove") {
+                                Task {
+                                    try? await model.api.deleteIcon(container.id)
+                                    await model.refresh()
+                                }
+                            }
+                            .controlSize(.small)
+                        }
+                    }
+                }
+                if !iconError.isEmpty {
+                    Text(iconError).font(.caption).foregroundStyle(.red)
+                }
+            }
+
+            GitIdentitySection(container: container)
+
+            ResourcesSection(container: container)
+
+            if let onDelete {
+                Section {
+                    Button("Remove Container", role: .destructive, action: onDelete)
+                    Text("The home directory with all auth state stays on disk.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .fileImporter(isPresented: $showIconPicker, allowedContentTypes: [.image]) { result in
             switch result {
-            case .success(let url):
-                uploadIcon(from: url)
-            case .failure(let err):
-                iconError = err.localizedDescription
+            case .success(let url): uploadIcon(from: url)
+            case .failure(let err): iconError = err.localizedDescription
             }
         }
     }
@@ -223,27 +268,6 @@ private struct ContainerInfoForm: View {
         NSGraphicsContext.restoreGraphicsState()
         return rep.representation(using: .png, properties: [:])
     }
-
-    private func cliRow(name: String, cli: String, ok: Bool) -> some View {
-        LabeledContent {
-            HStack(spacing: 10) {
-                Text(ok ? "Authenticated" : "Not authenticated")
-                    .foregroundStyle(ok ? Color.primary : Color.secondary)
-                if container.isRunning {
-                    Button(ok ? "Re-login…" : "Login…") {
-                        onLogin(cli)
-                    }
-                    .controlSize(.small)
-                }
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: ok ? "checkmark.seal.fill" : "xmark.seal")
-                    .foregroundStyle(ok ? .green : .secondary)
-                Text(name)
-            }
-        }
-    }
 }
 
 // MARK: - Git identity section
@@ -290,6 +314,91 @@ private struct GitIdentitySection: View {
             name = container.gitName ?? ""
             email = container.gitEmail ?? ""
             saved = false
+        }
+    }
+}
+
+// MARK: - Resources section
+
+private struct ResourcesSection: View {
+    let container: AgentContainer
+    @EnvironmentObject private var model: AppModel
+    @State private var memMb = ""
+    @State private var cpus = ""
+    @State private var pids = ""
+    @State private var saved = false
+    @State private var error = ""
+
+    var body: some View {
+        Section("Resource Limits") {
+            LabeledContent("Memory (MB)") {
+                TextField("", text: $memMb, prompt: Text(defaultHint(\.memMb)))
+                    .frame(width: 120).multilineTextAlignment(.trailing)
+            }
+            LabeledContent("CPUs") {
+                TextField("", text: $cpus, prompt: Text(defaultHint(\.cpus)))
+                    .frame(width: 120).multilineTextAlignment(.trailing)
+            }
+            LabeledContent("Process limit") {
+                TextField("", text: $pids, prompt: Text(defaultHint(\.pidsLimit)))
+                    .frame(width: 120).multilineTextAlignment(.trailing)
+            }
+            HStack {
+                Text(container.resources?.isDefault == true
+                     ? "Using global defaults — override per container above."
+                     : "Custom limits set.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if saved {
+                    Text("Saved — applies on next start.").font(.caption).foregroundStyle(.green)
+                }
+                if !error.isEmpty {
+                    Text(error).font(.caption).foregroundStyle(.red)
+                }
+                Spacer()
+                Button("Save") { save() }.controlSize(.small)
+            }
+        }
+        .task(id: container.id) {
+            // prefill only when a custom value is set; otherwise leave empty
+            // so the placeholder shows the effective default
+            if container.resources?.isDefault == false, let r = container.resources {
+                memMb = String(Int(r.memMb))
+                cpus = trimNum(r.cpus)
+                pids = String(Int(r.pidsLimit))
+            } else {
+                memMb = ""; cpus = ""; pids = ""
+            }
+            saved = false
+        }
+    }
+
+    private func defaultHint(_ key: KeyPath<ContainerResources, Double>) -> String {
+        guard let r = container.resources else { return "" }
+        let v = r[keyPath: key]
+        return key == \.cpus ? trimNum(v) : String(Int(v))
+    }
+
+    private func trimNum(_ v: Double) -> String {
+        v == v.rounded() ? String(Int(v)) : String(v)
+    }
+
+    private func save() {
+        saved = false
+        error = ""
+        Task {
+            do {
+                try await model.api.updateResources(
+                    container.id,
+                    memMb: memMb.isEmpty ? nil : Double(memMb),
+                    cpus: cpus.isEmpty ? nil : Double(cpus),
+                    pidsLimit: pids.isEmpty ? nil : Double(pids)
+                )
+                await model.refresh()
+                saved = true
+            } catch {
+                self.error = error.localizedDescription
+            }
         }
     }
 }

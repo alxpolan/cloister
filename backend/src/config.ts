@@ -18,6 +18,9 @@ export const config = {
   hostHomesDir: process.env.HOST_HOMES_DIR ?? "",
   agentImage: process.env.AGENT_IMAGE ?? "agent-base:latest",
   containerPrefix: "agent-",
+  agentMemoryMb: Number(process.env.AGENT_MEMORY_MB ?? 4096),
+  agentCpus: Number(process.env.AGENT_CPUS ?? 2),
+  agentPidsLimit: Number(process.env.AGENT_PIDS_LIMIT ?? 512),
 };
 
 export function hostHomePath(company: string): string {

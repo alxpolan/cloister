@@ -5,6 +5,7 @@ import {
   type AccountRow,
   type CatalogRow,
   type ContainerRow,
+  type RunRow,
 } from "./db.js";
 import { assignmentSummary, getAssignments } from "./mcps.js";
 import {
@@ -20,7 +21,7 @@ import {
 import { CLAUDE_TOKEN_ENV } from "./authsessions.js";
 import { authStatus, ensureHomeDir } from "./configgen.js";
 import { deleteSecret, listSecretRefs, storeSecret } from "./crypto.js";
-import { hostHomePath } from "./config.js";
+import { config, hostHomePath } from "./config.js";
 import {
   attachMcpWatcher,
   createAuthSession,
@@ -64,7 +65,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const { rows } = await pool.query<
       ContainerRow & { has_icon: boolean; icon_version: number }
     >(
-      `SELECT id, name, company, status, home_path, mcp_config_json, git_name, git_email, created_at,
+      `SELECT id, name, company, status, home_path, mcp_config_json, git_name, git_email,
+              mem_mb, cpus, pids_limit, created_at,
               (icon IS NOT NULL) AS has_icon,
               COALESCE(extract(epoch FROM icon_updated_at), 0)::bigint AS icon_version
        FROM containers ORDER BY created_at`,
@@ -102,6 +104,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
           mcps: await assignmentSummary(c.id, c.company),
           hasIcon: c.has_icon,
           iconVersion: Number(c.icon_version),
+          resources: {
+            memMb: c.mem_mb ?? config.agentMemoryMb,
+            cpus: c.cpus ?? config.agentCpus,
+            pidsLimit: c.pids_limit ?? config.agentPidsLimit,
+            isDefault: c.mem_mb === null && c.cpus === null && c.pids_limit === null,
+          },
         };
       }),
     );
@@ -203,6 +211,22 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return { ok: true, note: "applies on next start" };
     }
   );
+
+  app.put<{
+    Params: { id: string };
+    Body: { memMb?: number | null; cpus?: number | null; pidsLimit?: number | null };
+  }>("/containers/:id/resources", async (req, reply) => {
+    const row = await getContainerRow(req.params.id);
+    if (!row) return reply.code(404).send({ error: "not found" });
+    const { memMb, cpus, pidsLimit } = req.body ?? ({} as any);
+    const clean = (v: unknown, min: number) =>
+      typeof v === "number" && Number.isFinite(v) && v >= min ? v : null;
+    await pool.query(
+      "UPDATE containers SET mem_mb = $1, cpus = $2, pids_limit = $3 WHERE id = $4",
+      [clean(memMb, 256), clean(cpus, 0.25), clean(pidsLimit, 16), row.id]
+    );
+    return { ok: true, note: "applies on next start" };
+  });
 
   // ---------- container icons ----------
 
@@ -697,13 +721,88 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       .filter(([k, v]) => /^[A-Z][A-Z0-9_]*$/.test(k) && typeof v === "string")
       .map(([k, v]) => `${k}=${v}`);
     const env = [...(await resolveAllEnv(row.id)), ...requestEnv];
-    const result = await execInContainer(company, cmd, timeoutMs, env);
-    return {
-      company,
-      cli,
-      exitCode: result.exitCode,
-      stdout: result.stdout,
-      stderr: result.stderr,
+
+    const { rows: runRows } = await pool.query<{ id: string }>(
+      `INSERT INTO runs (company, cli, model, source, prompt)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [company, cli, model?.trim() || null, req.headers["x-run-source"] ?? "api", prompt],
+    );
+    const runId = runRows[0].id;
+
+    // buffer live output and flush to the DB at most every 2s so a running
+    // run shows progress in the dashboard without hammering Postgres
+    let outBuf = "";
+    let errBuf = "";
+    let dirty = false;
+    const flush = async () => {
+      if (!dirty) return;
+      dirty = false;
+      await pool
+        .query("UPDATE runs SET stdout = $1, stderr = $2 WHERE id = $3", [outBuf, errBuf, runId])
+        .catch(() => {});
     };
+    const timer = setInterval(flush, 2000);
+
+    try {
+      const result = await execInContainer(company, cmd, timeoutMs, env, (streamName, chunk) => {
+        if (streamName === "stdout") outBuf += chunk;
+        else errBuf += chunk;
+        dirty = true;
+      });
+      clearInterval(timer);
+      await pool.query(
+        `UPDATE runs SET status = $1, exit_code = $2, stdout = $3, stderr = $4, finished_at = now()
+         WHERE id = $5`,
+        [result.exitCode === 0 ? "succeeded" : "failed", result.exitCode, outBuf, errBuf, runId],
+      );
+      return {
+        runId,
+        company,
+        cli,
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+      };
+    } catch (err: any) {
+      clearInterval(timer);
+      await pool.query(
+        `UPDATE runs SET status = 'failed', stdout = $1, stderr = $2, error = $3, finished_at = now()
+         WHERE id = $4`,
+        [outBuf, errBuf, String(err?.message ?? err), runId],
+      );
+      throw err;
+    }
+  });
+
+  // ---------- run history ----------
+
+  app.get<{ Querystring: { company?: string; limit?: string } }>(
+    "/runs",
+    async (req) => {
+      const { company, limit } = req.query;
+      const n = Math.min(Number(limit) || 50, 200);
+      const params: unknown[] = [];
+      let where = "";
+      if (company) {
+        params.push(company);
+        where = "WHERE company = $1";
+      }
+      const { rows } = await pool.query<RunRow>(
+        `SELECT id, company, cli, model, source, status, exit_code,
+                left(prompt, 500) AS prompt, started_at, finished_at,
+                length(stdout) AS stdout_len
+         FROM runs ${where} ORDER BY started_at DESC LIMIT ${n}`,
+        params,
+      );
+      return rows;
+    },
+  );
+
+  app.get<{ Params: { id: string } }>("/runs/:id", async (req, reply) => {
+    const { rows } = await pool.query<RunRow>("SELECT * FROM runs WHERE id = $1", [
+      req.params.id,
+    ]);
+    if (!rows[0]) return reply.code(404).send({ error: "not found" });
+    return rows[0];
   });
 }

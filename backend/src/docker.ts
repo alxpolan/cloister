@@ -119,6 +119,10 @@ export async function startContainer(
       HostConfig: {
         Binds: [`${hostHomePath(row.company)}:/home/node`],
         RestartPolicy: { Name: "unless-stopped" },
+        Memory: (row.mem_mb ?? config.agentMemoryMb) * 1024 * 1024,
+        MemorySwap: (row.mem_mb ?? config.agentMemoryMb) * 1024 * 1024,
+        NanoCpus: Math.round((row.cpus ?? config.agentCpus) * 1e9),
+        PidsLimit: row.pids_limit ?? config.agentPidsLimit,
         ...(withAuthPort
           ? {
               PortBindings: {
@@ -203,6 +207,7 @@ export async function execInContainer(
   cmd: string[],
   timeoutMs = 15 * 60 * 1000,
   extraEnv: string[] = [],
+  onData?: (stream: "stdout" | "stderr", chunk: string) => void,
 ): Promise<ExecResult> {
   const container = docker.getContainer(containerName(company));
   const exec = await container.exec({
@@ -219,8 +224,15 @@ export async function execInContainer(
   const stderr = new PassThrough();
   const outChunks: Buffer[] = [];
   const errChunks: Buffer[] = [];
-  stdout.on("data", (c: Buffer) => outChunks.push(c));
-  stderr.on("data", (c: Buffer) => errChunks.push(c));
+  stdout.on("data", (c: Buffer) => {
+    outChunks.push(c);
+    onData?.("stdout", c.toString("utf8"));
+  });
+  
+  stderr.on("data", (c: Buffer) => {
+    errChunks.push(c);
+    onData?.("stderr", c.toString("utf8"));
+  });
   docker.modem.demuxStream(stream, stdout, stderr);
 
   await new Promise<void>((resolve, reject) => {
