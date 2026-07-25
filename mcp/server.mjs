@@ -41,7 +41,7 @@ function fail(err) {
   return { isError: true, content: [{ type: "text", text: String(err.message ?? err) }] };
 }
 
-const server = new McpServer({ name: "agent-containers", version: "0.1.0" });
+const server = new McpServer({ name: "cloister", version: "0.1.0" });
 
 server.tool(
   "list_containers",

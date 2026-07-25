@@ -34,6 +34,14 @@ export interface Container {
   mcps: McpSummary[];
   hasIcon: boolean;
   iconVersion: number;
+  git_name: string | null;
+  git_email: string | null;
+  resources: {
+    memMb: number;
+    cpus: number;
+    pidsLimit: number;
+    isDefault: boolean;
+  };
 }
 
 export interface CatalogEntry {
@@ -115,6 +123,26 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ mcpServers }),
     }),
+  updateGitIdentity: (id: string, name: string, email: string) =>
+    request<{ ok: boolean }>(`/containers/${id}/git-identity`, {
+      method: "PUT",
+      body: JSON.stringify({ name, email }),
+    }),
+  updateResources: (
+    id: string,
+    r: { memMb: number | null; cpus: number | null; pidsLimit: number | null },
+  ) =>
+    request<{ ok: boolean }>(`/containers/${id}/resources`, {
+      method: "PUT",
+      body: JSON.stringify(r),
+    }),
+  uploadIcon: (id: string, dataBase64: string, mime: string) =>
+    request<{ ok: boolean }>(`/containers/${id}/icon`, {
+      method: "PUT",
+      body: JSON.stringify({ data: dataBase64, mime }),
+    }),
+  deleteIcon: (id: string) =>
+    request<{ ok: boolean }>(`/containers/${id}/icon`, { method: "DELETE" }),
   updateAccounts: (
     id: string,
     accounts: Omit<Account, "id" | "container_id">[],
@@ -163,7 +191,9 @@ export const api = {
   killAuthSession: (sid: string) =>
     request<{ ok: boolean }>(`/auth-sessions/${sid}`, { method: "DELETE" }),
   listRuns: (company?: string) =>
-    request<RunSummary[]>(`/runs${company ? `?company=${encodeURIComponent(company)}` : ""}`),
+    request<RunSummary[]>(
+      `/runs${company ? `?company=${encodeURIComponent(company)}` : ""}`,
+    ),
   getRun: (id: string) => request<RunDetail>(`/runs/${id}`),
   listSecrets: () => request<SecretRef[]>("/secrets"),
   putSecret: (ref: string, value: string) =>

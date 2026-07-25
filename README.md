@@ -1,13 +1,15 @@
-# Agent Containers
+# Cloister
 
-**Give every company its own isolated Claude Code & Codex — one dashboard, real logins, per-tenant MCP servers.**
+**Isolated Claude Code & Codex, one cell per company.** Real logins, per-tenant
+MCP servers, encrypted secrets — a walled cell for each client's agents, driven
+by one terminal command: `agents`.
 
 If you run coding agents for more than one company, app, or client, they all
 share the same `~/.claude.json`, the same globally-connected MCP servers, and
 the same tokens. One agent can see another's GitHub, Notion, RevenueCat — even
 though they should be strictly separated.
 
-Agent Containers fixes that. Each company gets its own Docker container with
+Cloister fixes that. Each company gets its own Docker container with
 its own `$HOME`, its own Claude Code / Codex login, and its own MCP servers and
 secrets — isolated at the filesystem level, not by convention. A clean
 dashboard (web + native macOS app) manages the fleet, and a drop-in

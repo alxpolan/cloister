@@ -1,27 +1,37 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
-  content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./lib/**/*.{ts,tsx}"],
+  content: [
+    "./app/**/*.{ts,tsx}",
+    "./components/**/*.{ts,tsx}",
+    "./lib/**/*.{ts,tsx}",
+  ],
   theme: {
     extend: {
       colors: {
-        // single restrained accent; everything else stays neutral
         accent: {
-          DEFAULT: "#2563eb",
-          hover: "#1d4ed8",
+          DEFAULT: "#6366f1",
+          hover: "#4f46e5",
+          soft: "#eef2ff",
         },
       },
       fontFamily: {
         sans: [
           "-apple-system",
           "BlinkMacSystemFont",
-          "Segoe UI",
           "Inter",
+          "Segoe UI",
           "Helvetica Neue",
           "Arial",
           "sans-serif",
         ],
-        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "monospace"],
+        mono: [
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "Consolas",
+          "monospace",
+        ],
       },
     },
   },

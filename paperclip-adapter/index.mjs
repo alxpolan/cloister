@@ -180,7 +180,7 @@ function postJsonLongPoll(path, payload, timeoutMs) {
 export function createServerAdapter() {
   return {
     type: "claude_docker",
-    label: "Agent Container (Claude / Codex)",
+    label: "Cloister (Claude / Codex)",
     supportsLocalAgentJwt: true,
     supportsInstructionsBundle: false,
 

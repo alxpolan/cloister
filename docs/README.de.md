@@ -1,4 +1,4 @@
-# Agent Containers
+# Cloister
 
 Multi-Tenant-Dashboard für isolierte Claude-Code-/Codex-Container — pro Firma
 (Marteso, KalBuddy, Pocketz, RowTally, …) ein eigener Docker-Container mit

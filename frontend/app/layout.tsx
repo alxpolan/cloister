@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Agent Containers",
+  title: "Cloister",
   description: "Multi-tenant Claude Code / Codex container dashboard",
 };
 

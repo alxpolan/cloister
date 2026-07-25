@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ExternalLink, Send } from "lucide-react";
 import { api, type AuthSessionState, type Container } from "@/lib/api";
-import { Button, inputClass, Modal } from "./ui";
+import { Button, inputClass, Modal } from "./kit";
 
 const URL_RE = /https:\/\/[^\s"'<>)\]]+/g;
 

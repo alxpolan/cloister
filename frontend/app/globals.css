@@ -2,6 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
+html,
 body {
-  @apply bg-neutral-50 text-neutral-900 antialiased;
+  height: 100%;
+}
+
+body {
+  @apply bg-neutral-100 text-neutral-900 antialiased;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-neutral-300;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-neutral-400;
+  background-clip: content-box;
 }
