@@ -121,6 +121,7 @@ function here(company, cli, extra) {
     .filter((e) => /^[A-Z][A-Z0-9_]*=/.test(e))
     .flatMap((e) => ["-e", e]);
 
+  const image = inspect(company, "{{.Config.Image}}") || IMAGE;
   const cwd = process.cwd();
   const name = cwd.split("/").filter(Boolean).pop() || "project";
   const mountPoint = `/home/node/workspace/${name}`;
@@ -150,7 +151,7 @@ function here(company, cli, extra) {
       `${cwd}:${mountPoint}`,
       "-w",
       mountPoint,
-      IMAGE,
+      image,
       ...cliArgs,
     ],
     { stdio: "inherit" }
