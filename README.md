@@ -51,7 +51,7 @@ agents inside the right container automatically.
 Requires Docker running.
 
 ```sh
-npm install -g cloister
+npm install -g cloister-sh
 cloister up
 ```
 

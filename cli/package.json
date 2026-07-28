@@ -1,5 +1,5 @@
 {
-  "name": "cloister",
+  "name": "cloister-sh",
   "version": "0.1.0",
   "description": "Isolated Claude Code & Codex, one cell per company. Per-tenant containers with real logins, MCP servers and secrets.",
   "type": "module",
