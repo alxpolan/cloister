@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
+import { realpathSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+import { randomBytes } from "node:crypto";
 
 const PREFIX = "agent-";
+const SELF = realpathSync(fileURLToPath(import.meta.url));
+const REPO = resolve(dirname(SELF), "..");
 
 function docker(args, opts = {}) {
   return spawnSync("docker", args, { encoding: "utf8", ...opts });
@@ -116,12 +122,12 @@ function here(company, cli, extra) {
     cli === "codex"
       ? ["codex", ...extra]
       : [
-          "claude",
-          "--mcp-config",
-          "/home/node/workspace/.mcp.json",
-          "--strict-mcp-config",
-          ...extra,
-        ];
+        "claude",
+        "--mcp-config",
+        "/home/node/workspace/.mcp.json",
+        "--strict-mcp-config",
+        ...extra,
+      ];
 
   const r = docker(
     [
@@ -145,8 +151,83 @@ function here(company, cli, extra) {
   process.exit(r.status ?? 0);
 }
 
+function compose(args, opts = {}) {
+  return spawnSync("docker", ["compose", ...args], { cwd: REPO, stdio: "inherit", ...opts });
+}
+
+function ensureEnv() {
+  const envPath = resolve(REPO, ".env");
+  let env = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
+  let changed = false;
+  if (!/^SECRETS_KEY=/m.test(env)) {
+    env += `SECRETS_KEY=${randomBytes(32).toString("hex")}\n`;
+    changed = true;
+  }
+  if (!/^API_TOKEN=/m.test(env)) {
+    env += `API_TOKEN=${randomBytes(32).toString("hex")}\n`;
+    changed = true;
+  }
+  if (changed) {
+    writeFileSync(envPath, env);
+    console.error("→ wrote .env (encryption key + API token)");
+  }
+}
+
+function apiToken() {
+  const envPath = resolve(REPO, ".env");
+  if (!existsSync(envPath)) return "";
+  return (readFileSync(envPath, "utf8").match(/^API_TOKEN=(.*)$/m)?.[1] ?? "").trim();
+}
+
+function stackUp() {
+  requireDocker();
+  ensureEnv();
+  console.error("→ building the agent base image (Claude Code + Codex + mcp-remote + gh)…");
+
+  const build = docker(
+    ["build", "-q", "-f", "docker/base.Dockerfile", "-t", "agent-base:latest", "docker/"],
+    { cwd: REPO, stdio: ["ignore", "ignore", "inherit"] }
+  );
+  if (build.status !== 0) process.exit(build.status ?? 1);
+  console.error("→ starting Postgres, backend and dashboard…");
+  const up = compose(["up", "-d", "--build"]);
+  if (up.status !== 0) process.exit(up.status ?? 1);
+
+  process.stderr.write("→ waiting for the dashboard…");
+  for (let i = 0; i < 40; i++) {
+    const r = spawnSync("curl", ["-s", "--max-time", "2", "-o", "/dev/null", "http://localhost:3000"]);
+    if (r.status === 0) break;
+    process.stderr.write(".");
+    spawnSync("sleep", ["2"]);
+  }
+  console.error(" ready\n");
+  console.log("  Cloister is running.\n");
+  console.log("  Dashboard   http://localhost:3000");
+  console.log("  CLI         agents            (list)   ·   agents <company>   (open a cell)");
+  console.log(`  API token   ${apiToken()}\n`);
+  console.log("  Next: open the dashboard, create a container, log in Claude/Codex,");
+  console.log("        then run 'agents <company>' to drop into its isolated session.");
+}
+
+function stackDown() {
+  requireDocker();
+  console.error("→ stopping the Cloister stack (agent containers keep running)…");
+  compose(["stop"]);
+}
+
+function stackStatus() {
+  requireDocker();
+  compose(["ps"]);
+}
+
 function usage() {
-  console.log(`agents — isolated Claude Code / Codex per company
+  console.log(`cloister / agents — isolated Claude Code / Codex per company
+
+Stack:
+  cloister up                   build + start the whole stack (web, API, DB, CLI)
+  cloister down                 stop the stack
+  cloister status               show stack services
+
 
 Usage:
   agents                        list containers and status
@@ -168,10 +249,15 @@ Containers, MCP servers, logins and secrets are managed in the dashboard
 
 function main() {
   const [cmd, ...rest] = process.argv.slice(2);
+
+  if (cmd === "help" || cmd === "-h" || cmd === "--help") return usage();
+  if (cmd === "up" && !rest[0]) return stackUp();
+  if (cmd === "down" && !rest[0]) return stackDown();
+  if (cmd === "status" || cmd === "ps") return stackStatus();
+
   requireDocker();
 
   if (!cmd || cmd === "ls" || cmd === "list") return printList();
-  if (cmd === "help" || cmd === "-h" || cmd === "--help") return usage();
 
   if (cmd === "here") {
     const company = rest[0];
@@ -187,16 +273,12 @@ function main() {
   }
 
   if (cmd === "up") {
-    const company = rest[0];
-    if (!company) return console.error("usage: ac up <company>");
-    ensureRunning(company);
-    return console.log(`agent-${company} is running.`);
+    ensureRunning(rest[0]);
+    return console.log(`agent-${rest[0]} is running.`);
   }
   if (cmd === "down") {
-    const company = rest[0];
-    if (!company) return console.error("usage: ac down <company>");
-    docker(["stop", `${PREFIX}${company}`], { stdio: "ignore" });
-    return console.log(`agent-${company} stopped.`);
+    docker(["stop", `${PREFIX}${rest[0]}`], { stdio: "ignore" });
+    return console.log(`agent-${rest[0]} stopped.`);
   }
 
   // default: `ac <company> [claude|codex] [-- extra args]`
