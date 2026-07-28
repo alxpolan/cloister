@@ -4,6 +4,10 @@
 MCP servers, encrypted secrets — a walled cell for each client's agents, driven
 by one terminal command: `agents`.
 
+<p align="center">
+  <img src="docs/demo.gif" alt="Cloister CLI demo — agents lists cells, then drops into a company's isolated Claude Code session" width="800" />
+</p>
+
 If you run coding agents for more than one company, app, or client, they all
 share the same `~/.claude.json`, the same globally-connected MCP servers, and
 the same tokens. One agent can see another's GitHub, Notion, RevenueCat — even
@@ -44,46 +48,51 @@ agents inside the right container automatically.
 
 ## Quick start
 
-Requires Docker (running) and `openssl`.
+Requires Docker running.
 
 ```sh
-git clone https://github.com/alxpolan/agent-containers.git
-cd agent-containers
-./start.sh
+npm install -g cloister
+cloister up
 ```
 
-- **Dashboard** → http://localhost:3000
-- **API** → http://localhost:8080
-
-Then, per company:
+`cloister up` pulls the pre-built images and starts everything — dashboard, API
+and database. Then, per company:
 
 1. **New container** → e.g. name `Marteso`, slug `marteso`.
 2. **MCPs** → tick the servers you want; paste a token or click **Authorize** for
    OAuth servers.
 3. **Start**, then **Login** next to Claude Code / Codex.
 
-That's it — the company now has an isolated agent runtime. Repos the agents
-clone live in `homes/<company>/workspace/`, persistent across restarts.
+That's it — the company now has an isolated agent runtime.
+
+<details>
+<summary>From source (for development)</summary>
+
+```sh
+git clone https://github.com/alxpolan/cloister.git
+cd cloister
+./start.sh        # installs the CLI and builds + starts everything locally
+```
+</details>
 
 ## Daily use: the `agents` CLI
 
 Managing containers happens in the dashboard; *working* in one happens in your
-terminal. The `agents` CLI drops you straight into the real, native Claude Code or
-Codex session inside a company's container — think separate shells for your
-coding agents.
+terminal. `agents` drops you straight into the real, native Claude Code or Codex
+session inside a company's cell — think separate shells for your coding agents.
 
 ```sh
-cd cli && npm install -g .    # installs the `agents` command
-
 agents                # list containers and status
-agents marteso        # open Claude Code in Marteso's isolated container
+agents marteso        # open Claude Code in Marteso's isolated cell
 agents marteso codex  # open Codex instead
+agents here marteso   # run against your CURRENT directory (the repo you have open)
 agents marteso claude -- --model opus   # pass args straight to the CLI
-agents up marteso / agents down marteso # start / stop
 ```
 
 `agents marteso` is just an ergonomic `docker exec -it agent-marteso claude` —
 same native TUI, its own login and MCP servers, no leakage to other companies.
+
+Stack lifecycle: `cloister up` · `cloister down` · `cloister status`.
 
 ### Work on the project you already have open
 

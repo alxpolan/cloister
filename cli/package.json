@@ -1,8 +1,33 @@
 {
-  "name": "agent-containers-cli",
+  "name": "cloister",
   "version": "0.1.0",
-  "private": true,
+  "description": "Isolated Claude Code & Codex, one cell per company. Per-tenant containers with real logins, MCP servers and secrets.",
   "type": "module",
-  "bin": { "cloister": "cli.mjs", "agents": "cli.mjs" },
-  "description": "Drop into an isolated Claude Code / Codex session per company"
+  "bin": {
+    "cloister": "cli.mjs",
+    "agents": "cli.mjs"
+  },
+  "files": [
+    "cli.mjs",
+    "compose.pull.yml"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "claude-code",
+    "codex",
+    "ai-agents",
+    "multi-tenant",
+    "isolation",
+    "docker",
+    "mcp"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alxpolan/cloister.git",
+    "directory": "cli"
+  },
+  "homepage": "https://cloister.sh"
 }

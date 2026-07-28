@@ -1,0 +1,50 @@
+# Used by `cloister up` when installed from npm (no repo source present).
+# Pulls pre-built images from GHCR instead of building locally.
+# ${CLOISTER_OWNER} and ${CLOISTER_HOME} are filled in by the CLI.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: agent
+      POSTGRES_DB: agent_containers
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d agent_containers"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    image: ghcr.io/${CLOISTER_OWNER}/cloister-backend:latest
+    pull_policy: always
+    environment:
+      DATABASE_URL: postgres://agent:agent@postgres:5432/agent_containers
+      SECRETS_KEY: ${SECRETS_KEY}
+      API_TOKEN: ${API_TOKEN}
+      HOST: 0.0.0.0
+      HOMES_DIR: /app/homes
+      AGENT_IMAGE: ghcr.io/${CLOISTER_OWNER}/cloister-agent-base:latest
+    volumes:
+      - ${CLOISTER_HOME}/homes:/app/homes
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    image: ghcr.io/${CLOISTER_OWNER}/cloister-frontend:latest
+    pull_policy: always
+    environment:
+      BACKEND_URL: http://backend:8080
+      API_TOKEN: ${API_TOKEN}
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

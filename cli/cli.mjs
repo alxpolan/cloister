@@ -1,13 +1,20 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { realpathSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { realpathSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
+import { homedir } from "node:os";
 
 const PREFIX = "agent-";
 const SELF = realpathSync(fileURLToPath(import.meta.url));
-const REPO = resolve(dirname(SELF), "..");
+const PKG = dirname(SELF); // holds cli.mjs + compose.pull.yml
+const REPO = resolve(PKG, ".."); // repo root — only meaningful in dev mode
+
+// Dev mode = cloned repo (build images locally). Installed = npm global (pull from GHCR).
+const DEV = existsSync(resolve(REPO, "docker-compose.yml"));
+const OWNER = process.env.CLOISTER_OWNER ?? "alxpolan";
+const DATA_DIR = resolve(homedir(), ".cloister");
 
 function docker(args, opts = {}) {
   return spawnSync("docker", args, { encoding: "utf8", ...opts });
@@ -151,52 +158,67 @@ function here(company, cli, extra) {
   process.exit(r.status ?? 0);
 }
 
-function compose(args, opts = {}) {
-  return spawnSync("docker", ["compose", ...args], { cwd: REPO, stdio: "inherit", ...opts });
+function stackCtx() {
+  if (DEV) return { dir: REPO, envPath: resolve(REPO, ".env"), composeArgs: [] };
+  mkdirSync(resolve(DATA_DIR, "homes"), { recursive: true });
+  return {
+    dir: DATA_DIR,
+    envPath: resolve(DATA_DIR, ".env"),
+    composeArgs: ["-f", resolve(PKG, "compose.pull.yml"), "-p", "cloister"],
+  };
 }
 
-function ensureEnv() {
-  const envPath = resolve(REPO, ".env");
+function ensureEnv(envPath) {
   let env = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
   let changed = false;
-  if (!/^SECRETS_KEY=/m.test(env)) {
-    env += `SECRETS_KEY=${randomBytes(32).toString("hex")}\n`;
-    changed = true;
-  }
-  if (!/^API_TOKEN=/m.test(env)) {
-    env += `API_TOKEN=${randomBytes(32).toString("hex")}\n`;
-    changed = true;
-  }
-  if (changed) {
-    writeFileSync(envPath, env);
-    console.error("→ wrote .env (encryption key + API token)");
-  }
+  if (!/^SECRETS_KEY=/m.test(env)) { env += `SECRETS_KEY=${randomBytes(32).toString("hex")}\n`; changed = true; }
+  if (!/^API_TOKEN=/m.test(env)) { env += `API_TOKEN=${randomBytes(32).toString("hex")}\n`; changed = true; }
+  if (changed) { writeFileSync(envPath, env); console.error("→ wrote .env (encryption key + API token)"); }
 }
 
-function apiToken() {
-  const envPath = resolve(REPO, ".env");
-  if (!existsSync(envPath)) return "";
-  return (readFileSync(envPath, "utf8").match(/^API_TOKEN=(.*)$/m)?.[1] ?? "").trim();
+function readEnv(envPath) {
+  const out = {};
+  if (existsSync(envPath)) {
+    for (const line of readFileSync(envPath, "utf8").split("\n")) {
+      const m = line.match(/^([A-Z_]+)=(.*)$/);
+      if (m) out[m[1]] = m[2];
+    }
+  }
+  return out;
+}
+
+function compose(ctx, args, envExtra = {}) {
+  return spawnSync("docker", ["compose", ...ctx.composeArgs, ...args], {
+    cwd: ctx.dir,
+    stdio: "inherit",
+    env: { ...process.env, ...envExtra },
+  });
 }
 
 function stackUp() {
   requireDocker();
-  ensureEnv();
-  console.error("→ building the agent base image (Claude Code + Codex + mcp-remote + gh)…");
+  const ctx = stackCtx();
+  ensureEnv(ctx.envPath);
+  const env = readEnv(ctx.envPath);
+  const composeEnv = { ...env, CLOISTER_OWNER: OWNER, CLOISTER_HOME: DATA_DIR };
 
-  const build = docker(
-    ["build", "-q", "-f", "docker/base.Dockerfile", "-t", "agent-base:latest", "docker/"],
-    { cwd: REPO, stdio: ["ignore", "ignore", "inherit"] }
-  );
-  if (build.status !== 0) process.exit(build.status ?? 1);
-  console.error("→ starting Postgres, backend and dashboard…");
-  const up = compose(["up", "-d", "--build"]);
-  if (up.status !== 0) process.exit(up.status ?? 1);
+  if (DEV) {
+    console.error("→ building the agent base image…");
+    const build = docker(["build", "-q", "-f", "docker/base.Dockerfile", "-t", "agent-base:latest", "docker/"],
+      { cwd: REPO, stdio: ["ignore", "ignore", "inherit"] });
+    if (build.status !== 0) process.exit(build.status ?? 1);
+    console.error("→ starting Postgres, backend and dashboard…");
+    if (compose(ctx, ["up", "-d", "--build"], composeEnv).status !== 0) process.exit(1);
+  } else {
+    console.error("→ pulling the agent base image…");
+    docker(["pull", `ghcr.io/${OWNER}/cloister-agent-base:latest`], { stdio: "inherit" });
+    console.error("→ pulling and starting Postgres, backend and dashboard…");
+    if (compose(ctx, ["up", "-d"], composeEnv).status !== 0) process.exit(1);
+  }
 
   process.stderr.write("→ waiting for the dashboard…");
-  for (let i = 0; i < 40; i++) {
-    const r = spawnSync("curl", ["-s", "--max-time", "2", "-o", "/dev/null", "http://localhost:3000"]);
-    if (r.status === 0) break;
+  for (let i = 0; i < 60; i++) {
+    if (spawnSync("curl", ["-s", "--max-time", "2", "-o", "/dev/null", "http://localhost:3000"]).status === 0) break;
     process.stderr.write(".");
     spawnSync("sleep", ["2"]);
   }
@@ -204,20 +226,22 @@ function stackUp() {
   console.log("  Cloister is running.\n");
   console.log("  Dashboard   http://localhost:3000");
   console.log("  CLI         agents            (list)   ·   agents <company>   (open a cell)");
-  console.log(`  API token   ${apiToken()}\n`);
+  console.log(`  API token   ${env.API_TOKEN ?? ""}\n`);
   console.log("  Next: open the dashboard, create a container, log in Claude/Codex,");
   console.log("        then run 'agents <company>' to drop into its isolated session.");
 }
 
 function stackDown() {
   requireDocker();
+  const ctx = stackCtx();
   console.error("→ stopping the Cloister stack (agent containers keep running)…");
-  compose(["stop"]);
+  compose(ctx, ["stop"], { CLOISTER_OWNER: OWNER, CLOISTER_HOME: DATA_DIR });
 }
 
 function stackStatus() {
   requireDocker();
-  compose(["ps"]);
+  const ctx = stackCtx();
+  compose(ctx, ["ps"], { CLOISTER_OWNER: OWNER, CLOISTER_HOME: DATA_DIR });
 }
 
 function usage() {
