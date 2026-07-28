@@ -16,6 +16,11 @@ const DEV = existsSync(resolve(REPO, "docker-compose.yml"));
 const OWNER = process.env.CLOISTER_OWNER ?? "alxpolan";
 const DATA_DIR = resolve(homedir(), ".cloister");
 
+const COLOR = process.stdout.isTTY && !process.env.NO_COLOR;
+const paint = (code, s) => (COLOR ? `\x1b[${code}m${s}\x1b[0m` : s);
+const green = (s) => paint("32", s);
+const dim = (s) => paint("2", s);
+
 function docker(args, opts = {}) {
   return spawnSync("docker", args, { encoding: "utf8", ...opts });
 }
@@ -77,10 +82,11 @@ function printList() {
     return;
   }
   const width = Math.max(...rows.map((r) => r.company.length), 7);
-  console.log("COMPANY".padEnd(width) + "  STATUS");
+  console.log(dim("COMPANY".padEnd(width) + "  STATUS"));
   for (const r of rows) {
-    const dot = r.state === "running" ? "●" : "○";
-    console.log(`${r.company.padEnd(width)}  ${dot} ${r.state}`);
+    const running = r.state === "running";
+    const badge = running ? green(`● ${r.state}`) : dim(`○ ${r.state}`);
+    console.log(`${r.company.padEnd(width)}  ${badge}`);
   }
 }
 
@@ -244,7 +250,45 @@ function stackStatus() {
   requireDocker();
   const ctx = stackCtx();
   const env = readEnv(ctx.envPath);
-  compose(ctx, ["ps"], { ...env, CLOISTER_OWNER: OWNER, CLOISTER_HOME: DATA_DIR });
+  const composeEnv = { ...process.env, ...env, CLOISTER_OWNER: OWNER, CLOISTER_HOME: DATA_DIR };
+
+  const r = spawnSync("docker", ["compose", ...ctx.composeArgs, "ps", "-a", "--format", "json"], {
+    cwd: ctx.dir,
+    encoding: "utf8",
+    env: composeEnv,
+  });
+
+  let rows = [];
+  const raw = (r.stdout ?? "").trim();
+  if (raw) {
+    try {
+      rows = JSON.parse(raw);
+      if (!Array.isArray(rows)) rows = [rows];
+    } catch {
+      rows = raw.split("\n").map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    }
+  }
+
+  if (rows.length === 0) {
+    console.log("Stack is not running. Start it with 'cloister up'.");
+    return;
+  }
+
+  const port = (p) =>
+    (p?.Publishers ?? [])
+      .filter((x) => x.PublishedPort)
+      .map((x) => `${x.URL ?? "0.0.0.0"}:${x.PublishedPort}→${x.TargetPort}`)
+      .join(", ");
+
+  const width = Math.max(...rows.map((r) => (r.Service ?? "").length), 8);
+  console.log(dim("SERVICE".padEnd(width) + "  STATUS"));
+  for (const s of rows.sort((a, b) => (a.Service ?? "").localeCompare(b.Service ?? ""))) {
+    const up = s.State === "running";
+    const label = (s.Status ?? s.State ?? "?").toLowerCase();
+    const badge = up ? green(`● ${label}`) : dim(`○ ${label}`);
+    const ports = port(s);
+    console.log(`${(s.Service ?? "?").padEnd(width)}  ${badge}${ports ? dim("   " + ports) : ""}`);
+  }
 }
 
 function usage() {
