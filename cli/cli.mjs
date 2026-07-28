@@ -220,7 +220,7 @@ function stackUp() {
     console.error("→ pulling the agent base image…");
     docker(["pull", `ghcr.io/${OWNER}/cloister-agent-base:latest`], { stdio: "inherit" });
     console.error("→ pulling and starting Postgres, backend and dashboard…");
-    if (compose(ctx, ["up", "-d"], composeEnv).status !== 0) process.exit(1);
+    if (compose(ctx, ["up", "-d", "--pull", "always"], composeEnv).status !== 0) process.exit(1);
   }
 
   process.stderr.write("→ waiting for the dashboard…");

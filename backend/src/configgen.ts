@@ -157,6 +157,10 @@ async function writeCodexConfig(
     sandbox_mode: "danger-full-access",
     shell_environment_policy: { inherit: "all" },
     mcp_servers: mcpServers,
+    features: {
+      ...((existing.features as Record<string, unknown>) ?? {}),
+      apps: false,
+    },
     projects: {
       ...((existing.projects as Record<string, unknown>) ?? {}),
       [CONTAINER_WORKSPACE]: { trust_level: "trusted" },
