@@ -30,13 +30,13 @@ log in Claude/Codex, and you have an isolated agent runtime per company.
 ## Daily use
 
 ```sh
-agents                # list your cells and their status
-agents marteso        # open Claude Code in Marteso's isolated cell
-agents marteso codex  # …or Codex
-agents here marteso   # run against your CURRENT directory (the repo you have open)
+cloister                # list your cells and their status
+cloister marteso        # open Claude Code in Marteso's isolated cell
+cloister marteso codex  # …or Codex
+cloister here marteso   # run against your CURRENT directory (the repo you have open)
 ```
 
-`agents marteso` is an ergonomic `docker exec -it agent-marteso claude` — same
+`cloister marteso` is an ergonomic `docker exec -it agent-marteso claude` — same
 native TUI, its own login and MCP servers, no leakage to other companies.
 
 Stack lifecycle: `cloister up` · `cloister down` · `cloister status`.

@@ -2,7 +2,7 @@
 
 **Isolated Claude Code & Codex, one cell per company.** Real logins, per-tenant
 MCP servers, encrypted secrets — a walled cell for each client's agents, driven
-by one terminal command: `agents`.
+by one terminal command: `cloister`.
 
 <p align="center">
   <img src="docs/demo.gif" alt="Cloister CLI demo — agents lists cells, then drops into a company's isolated Claude Code session" width="800" />
@@ -75,36 +75,38 @@ cd cloister
 ```
 </details>
 
-## Daily use: the `agents` CLI
+## Daily use: the `cloister` CLI
 
 Managing containers happens in the dashboard; *working* in one happens in your
-terminal. `agents` drops you straight into the real, native Claude Code or Codex
-session inside a company's cell — think separate shells for your coding agents.
+terminal. `cloister <company>` drops you straight into the real, native Claude
+Code or Codex session inside that company's cell — separate shells for your
+coding agents.
 
 ```sh
-agents                # list containers and status
-agents marteso        # open Claude Code in Marteso's isolated cell
-agents marteso codex  # open Codex instead
-agents here marteso   # run against your CURRENT directory (the repo you have open)
-agents marteso claude -- --model opus   # pass args straight to the CLI
+cloister                # list your cells and their status
+cloister marteso        # open Claude Code in Marteso's isolated cell
+cloister marteso codex  # open Codex instead
+cloister here marteso   # run against your CURRENT directory (the repo you have open)
+cloister marteso -- --model opus   # pass args straight to the CLI
 ```
 
-`agents marteso` is just an ergonomic `docker exec -it agent-marteso claude` —
+`cloister marteso` is just an ergonomic `docker exec -it agent-marteso claude` —
 same native TUI, its own login and MCP servers, no leakage to other companies.
+(`agents` is a shorter alias for the same command.)
 
 Stack lifecycle: `cloister up` · `cloister down` · `cloister status`.
 
 ### Work on the project you already have open
 
-`agents here` runs a company's isolated agent against your **current
+`cloister here` runs a company's isolated agent against your **current
 directory** — the repo you have open in VS Code — instead of the container's
 own workspace. It reuses that company's login, MCP servers, secrets and git
 identity, but edits the exact files in front of you:
 
 ```sh
 cd ~/code/marteso-app       # your VS Code project
-agents here marteso         # Claude Code, isolated as Marteso, on THIS folder
-agents here marteso codex   # …or Codex
+cloister here marteso         # Claude Code, isolated as Marteso, on THIS folder
+cloister here marteso codex   # …or Codex
 ```
 
 Under the hood it starts a throwaway container that mounts the company home

@@ -226,50 +226,47 @@ function stackUp() {
   console.error(" ready\n");
   console.log("  Cloister is running.\n");
   console.log("  Dashboard   http://localhost:3000");
-  console.log("  CLI         agents            (list)   ·   agents <company>   (open a cell)");
+  console.log("  CLI         cloister          (list)   ·   cloister <company>   (open a cell)");
   console.log(`  API token   ${env.API_TOKEN ?? ""}\n`);
   console.log("  Next: open the dashboard, create a container, log in Claude/Codex,");
-  console.log("        then run 'agents <company>' to drop into its isolated session.");
+  console.log("        then run 'cloister <company>' to drop into its isolated session.");
 }
 
 function stackDown() {
   requireDocker();
   const ctx = stackCtx();
+  const env = readEnv(ctx.envPath);
   console.error("→ stopping the Cloister stack (agent containers keep running)…");
-  compose(ctx, ["stop"], { CLOISTER_OWNER: OWNER, CLOISTER_HOME: DATA_DIR });
+  compose(ctx, ["stop"], { ...env, CLOISTER_OWNER: OWNER, CLOISTER_HOME: DATA_DIR });
 }
 
 function stackStatus() {
   requireDocker();
   const ctx = stackCtx();
-  compose(ctx, ["ps"], { CLOISTER_OWNER: OWNER, CLOISTER_HOME: DATA_DIR });
+  const env = readEnv(ctx.envPath);
+  compose(ctx, ["ps"], { ...env, CLOISTER_OWNER: OWNER, CLOISTER_HOME: DATA_DIR });
 }
 
 function usage() {
-  console.log(`cloister / agents — isolated Claude Code / Codex per company
+  console.log(`cloister — isolated Claude Code / Codex per company
 
 Stack:
-  cloister up                   build + start the whole stack (web, API, DB, CLI)
-  cloister down                 stop the stack
-  cloister status               show stack services
+  cloister up                    pull/build + start the whole stack (web, API, DB)
+  cloister down                  stop the stack
+  cloister status                show stack services
 
+Work:
+  cloister                       list your cells and their status
+  cloister <company>             open Claude Code in that company's cell
+  cloister <company> codex       open Codex instead
+  cloister <company> -- <args>   pass extra args through (e.g. -- --model opus)
+  cloister here <company>        run against your CURRENT directory (the repo
+                                 you have open) — isolated login + MCPs
+  cloister here <company> codex  same, with Codex
+  cloister help                  this help
 
-Usage:
-  agents                        list containers and status
-  agents ls                     same
-  agents <company>              open Claude Code in that company's container
-  agents <company> codex        open Codex instead
-  agents <company> claude -- …   pass extra args to the CLI (e.g. -- --model opus)
-  agents here <company>         run the company's agent against the CURRENT
-                                directory (your VS Code project) — isolated
-                                login + MCPs, editing the files you have open
-  agents here <company> codex   same, with Codex
-  agents up <company>           start a container
-  agents down <company>         stop a container
-  agents help                   this help
-
-Containers, MCP servers, logins and secrets are managed in the dashboard
-(web at :3000 or the macOS app). This CLI is the fast path into a session.`);
+Containers, MCP servers, logins and secrets are managed in the dashboard at
+http://localhost:3000 (or the macOS app). ('agents' is a shorter alias.)`);
 }
 
 function main() {
