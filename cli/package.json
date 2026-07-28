@@ -1,6 +1,6 @@
 {
   "name": "cloister-sh",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Isolated Claude Code & Codex, one cell per company. Per-tenant containers with real logins, MCP servers and secrets.",
   "type": "module",
   "bin": {
@@ -9,7 +9,8 @@
   },
   "files": [
     "cli.mjs",
-    "compose.pull.yml"
+    "compose.pull.yml",
+    "README.md"
   ],
   "engines": {
     "node": ">=18"
