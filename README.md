@@ -13,38 +13,15 @@ share the same `~/.claude.json`, the same globally-connected MCP servers, and
 the same tokens. One agent can see another's GitHub, Notion, RevenueCat — even
 though they should be strictly separated.
 
-Cloister fixes that. Each company gets its own Docker container with
-its own `$HOME`, its own Claude Code / Codex login, and its own MCP servers and
-secrets — isolated at the filesystem level, not by convention. A clean
-dashboard (web + native macOS app) manages the fleet, and a drop-in
-[Paperclip](https://github.com/paperclipai/paperclip) adapter runs orchestrated
-agents inside the right container automatically.
+Cloister fixes that. Each company gets its own Docker container with its own
+`$HOME`, its own Claude Code / Codex login, and its own MCP servers and secrets —
+isolated at the filesystem level, not by convention. A clean web dashboard
+manages the fleet (a native macOS app lands this week).
 
 > Built by someone who manages ~8 companies and 50+ accounts and got tired of
 > agents leaking into each other. This is the missing isolation layer.
 
 ---
-
-## Why
-
-- **Real per-tenant isolation.** `./homes/<company>/` is mounted as
-  `/home/node`. Claude auth (`~/.claude.json`), Codex auth (`~/.codex/`), MCP
-  OAuth tokens and the workspace all live there — separated on disk, robust
-  against known `--strict-mcp-config` bugs.
-- **Subscription logins that survive automation.** Log in Claude Code and Codex
-  *from the dashboard* (`setup-token` capture + a container-side OAuth callback
-  proxy for Codex). The auth state persists across restarts.
-- **OAuth MCP servers that work for autonomous runs.** Notion, Vercel, PostHog,
-  RevenueCat and friends are pre-authorized once via the dashboard (`mcp-remote`
-  under the hood); the token lands in the tenant home so headless runs just work.
-- **A global MCP catalog.** Define a server once (with real favicons), then tick
-  it on per company and paste the token — no hand-written JSON per container.
-- **Encrypted secrets.** Tokens are libsodium-encrypted in Postgres and only
-  ever decrypted into the target container's environment at runtime.
-- **Real git, not just the GitHub MCP.** Each container ships `git` + `gh` with
-  per-company identity and a credential helper wired to the bound token —
-  agents can clone, commit and push, not just call the API.
-- **No Docker socket in agent containers.** Only the backend talks to Docker.
 
 ## Quick start
 
@@ -55,15 +32,16 @@ npm install -g cloister-sh
 cloister up
 ```
 
-`cloister up` pulls the pre-built images and starts everything — dashboard, API
-and database. Then, per company:
+`cloister up` pulls the pre-built images and starts everything — dashboard
+(http://localhost:3000), API and database. Then, per company:
 
 1. **New container** → e.g. name `Marteso`, slug `marteso`.
-2. **MCPs** → tick the servers you want; paste a token or click **Authorize** for
-   OAuth servers.
+2. **MCPs** → tick the servers you want (~65 come pre-loaded); paste a token or
+   click **Authorize** for OAuth servers.
 3. **Start**, then **Login** next to Claude Code / Codex.
 
-That's it — the company now has an isolated agent runtime.
+That's it — the company now has an isolated agent runtime. Drop into it with
+`cloister marteso`.
 
 <details>
 <summary>From source (for development)</summary>
@@ -113,6 +91,30 @@ Under the hood it starts a throwaway container that mounts the company home
 (auth + tokens) plus your working directory, so the agent can read, edit,
 commit and push your open project with the right identity — nothing leaks
 between companies.
+
+## Why it's built this way
+
+- **Real per-tenant isolation.** `./homes/<company>/` is mounted as
+  `/home/node`. Claude auth (`~/.claude.json`), Codex auth (`~/.codex/`), MCP
+  OAuth tokens and the workspace all live there — separated on disk, robust
+  against known `--strict-mcp-config` bugs.
+- **Subscription logins that survive automation.** Log in Claude Code and Codex
+  *from the dashboard* (`setup-token` capture + a container-side OAuth callback
+  proxy for Codex). The auth state persists across restarts.
+- **OAuth MCP servers that work for autonomous runs.** Notion, Vercel, PostHog,
+  RevenueCat and friends are pre-authorized once via the dashboard (`mcp-remote`
+  under the hood); the token lands in the tenant home so headless runs just work.
+- **A global MCP catalog, batteries included.** ~65 popular MCP servers come
+  pre-loaded with real favicons — GitHub, Linear, Sentry, Notion, Stripe,
+  Supabase, Vercel, Figma, Slack, Atlassian and more. Tick one on per company
+  and log in (OAuth) or paste a token; add your own in one click. No
+  hand-written JSON per container.
+- **Encrypted secrets.** Tokens are libsodium-encrypted in Postgres and only
+  ever decrypted into the target container's environment at runtime.
+- **Real git, not just the GitHub MCP.** Each container ships `git` + `gh` with
+  per-company identity and a credential helper wired to the bound token —
+  agents can clone, commit and push, not just call the API.
+- **No Docker socket in agent containers.** Only the backend talks to Docker.
 
 ## Architecture
 

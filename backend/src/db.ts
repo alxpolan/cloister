@@ -108,44 +108,183 @@ export interface RunRow {
 }
 
 async function seedCatalog(): Promise<void> {
-  const { rows } = await pool.query("SELECT count(*)::int AS n FROM mcp_catalog");
+  const { rows } = await pool.query(
+    "SELECT count(*)::int AS n FROM mcp_catalog",
+  );
   if (rows[0].n > 0) return;
+  // GitHub ships as the official stdio server (needs a PAT). Everything else is a
+  // hosted remote endpoint wrapped via mcp-remote. Every URL below was reachability-
+  // checked. OAuth servers need no secret — the dashboard drives the login flow;
+  // API-key servers carry a Bearer header filled from the named secret.
+  const github = {
+    key: "github",
+    label: "GitHub",
+    icon: "github",
+    config: {
+      command: "npx",
+      args: ["-y", "@modelcontextprotocol/server-github"],
+      env: { GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_TOKEN}" },
+    },
+    secrets: [{ env: "GITHUB_TOKEN", label: "Personal Access Token" }],
+  };
+
+  // [key, label, url]                    → hosted OAuth server (no secret)
+  // [key, label, url, ENV, "Label"]      → hosted server with a Bearer API key
+  const hosted: [string, string, string, string?, string?][] = [
+    // dev & infra
+    ["linear", "Linear", "https://mcp.linear.app/mcp"],
+    ["sentry", "Sentry", "https://mcp.sentry.dev/mcp"],
+    ["vercel", "Vercel", "https://mcp.vercel.com"],
+    ["netlify", "Netlify", "https://netlify-mcp.netlify.app/mcp"],
+    ["cloudflare", "Cloudflare", "https://mcp.cloudflare.com/mcp"],
+    ["gitlab", "GitLab", "https://gitlab.com/api/v4/mcp"],
+    ["supabase", "Supabase", "https://mcp.supabase.com/mcp"],
+    ["neon", "Neon", "https://mcp.neon.tech/mcp"],
+    ["planetscale", "PlanetScale", "https://mcp.pscale.dev/mcp/planetscale"],
+    ["prisma", "Prisma", "https://mcp.prisma.io/mcp"],
+    ["render", "Render", "https://mcp.render.com/mcp"],
+    ["railway", "Railway", "https://mcp.railway.com"],
+    ["heroku", "Heroku", "https://mcp.heroku.com/mcp"],
+    [
+      "digitalocean",
+      "DigitalOcean",
+      "https://apps.mcp.digitalocean.com/mcp",
+      "DIGITALOCEAN_API_TOKEN",
+      "API Token",
+    ],
+    ["grafana", "Grafana Cloud", "https://mcp.grafana.com/mcp"],
+    ["datadog", "Datadog", "https://mcp.datadoghq.com/v1/mcp"],
+    ["honeycomb", "Honeycomb", "https://mcp.honeycomb.io/mcp"],
+    [
+      "pagerduty",
+      "PagerDuty",
+      "https://mcp.pagerduty.com/mcp",
+      "PAGERDUTY_USER_API_KEY",
+      "User API Token",
+    ],
+    [
+      "raygun",
+      "Raygun",
+      "https://api.raygun.com/v3/mcp",
+      "RAYGUN_PAT",
+      "Personal Access Token",
+    ],
+    ["postman", "Postman", "https://mcp.postman.com/mcp"],
+    ["sourcegraph", "Sourcegraph", "https://sourcegraph.com/.api/mcp/v1"],
+    // data, ai & search
+    [
+      "posthog",
+      "PostHog",
+      "https://mcp.posthog.com/mcp",
+      "POSTHOG_API_KEY",
+      "Personal API Key",
+    ],
+    ["amplitude", "Amplitude", "https://mcp.amplitude.com/mcp"],
+    ["mixpanel", "Mixpanel", "https://mcp.mixpanel.com/mcp"],
+    ["exa", "Exa", "https://mcp.exa.ai/mcp"],
+    ["firecrawl", "Firecrawl", "https://mcp.firecrawl.dev/v2/mcp"],
+    ["apify", "Apify", "https://mcp.apify.com"],
+    ["kagi", "Kagi", "https://mcp.kagi.com/mcp", "KAGI_API_KEY", "API Key"],
+    [
+      "huggingface",
+      "Hugging Face",
+      "https://huggingface.co/mcp",
+      "HF_TOKEN",
+      "Access Token",
+    ],
+    [
+      "replicate",
+      "Replicate",
+      "https://mcp.replicate.com/sse",
+      "REPLICATE_API_TOKEN",
+      "API Token",
+    ],
+    ["algolia", "Algolia", "https://mcp.algolia.com/mcp"],
+    [
+      "cloudinary",
+      "Cloudinary",
+      "https://asset-management.mcp.cloudinary.com/mcp",
+    ],
+    ["semgrep", "Semgrep", "https://mcp.semgrep.ai/mcp"],
+    ["hex", "Hex", "https://app.hex.tech/mcp"],
+    // payments & fintech
+    ["stripe", "Stripe", "https://mcp.stripe.com"],
+    ["paypal", "PayPal", "https://mcp.paypal.com/mcp"],
+    ["plaid", "Plaid", "https://api.dashboard.plaid.com/mcp"],
+    ["revenuecat", "RevenueCat", "https://mcp.revenuecat.ai/mcp"],
+    ["square", "Square", "https://mcp.squareup.com/sse"],
+    // productivity & collaboration
+    ["notion", "Notion", "https://mcp.notion.com/mcp"],
+    ["atlassian", "Atlassian", "https://mcp.atlassian.com/v1/mcp"],
+    ["asana", "Asana", "https://mcp.asana.com/v2/mcp"],
+    ["monday", "monday.com", "https://mcp.monday.com/mcp"],
+    ["clickup", "ClickUp", "https://mcp.clickup.com/mcp"],
+    ["trello", "Trello", "https://mcp.trello.com/v1"],
+    ["slack", "Slack", "https://mcp.slack.com/mcp"],
+    ["airtable", "Airtable", "https://mcp.airtable.com/mcp"],
+    ["box", "Box", "https://mcp.box.com"],
+    ["dropbox", "Dropbox", "https://mcp.dropbox.com/mcp"],
+    ["calendly", "Calendly", "https://mcp.calendly.com"],
+    ["miro", "Miro", "https://mcp.miro.com/"],
+    ["canva", "Canva", "https://mcp.canva.com/mcp"],
+    ["figma", "Figma", "https://mcp.figma.com/mcp"],
+    ["make", "Make", "https://mcp.make.com/stream"],
+    [
+      "zapier",
+      "Zapier",
+      "https://mcp.zapier.com/api/v1/connect",
+      "ZAPIER_MCP_TOKEN",
+      "MCP Token",
+    ],
+    // crm, support & marketing
+    ["hubspot", "HubSpot", "https://mcp.hubspot.com/anthropic"],
+    [
+      "salesforce",
+      "Salesforce",
+      "https://api.salesforce.com/platform/mcp/v1/platform/sobject-reads",
+    ],
+    ["intercom", "Intercom", "https://mcp.intercom.com/mcp"],
+    ["pipedrive", "Pipedrive", "https://mcp.pipedrive.ai/mcp"],
+    ["close", "Close", "https://mcp.close.com/mcp", "CLOSE_API_KEY", "API Key"],
+    ["customerio", "Customer.io", "https://mcp.customer.io/mcp"],
+    ["resend", "Resend", "https://mcp.resend.com/mcp"],
+    // cms
+    ["contentful", "Contentful", "https://mcp.contentful.com/mcp"],
+    ["sanity", "Sanity", "https://mcp.sanity.io"],
+    [
+      "storyblok",
+      "Storyblok",
+      "https://mcp.labs.storyblok.com/mcp",
+      "STORYBLOK_PERSONAL_ACCESS_TOKEN",
+      "Personal Access Token",
+    ],
+    ["webflow", "Webflow", "https://mcp.webflow.com/sse"],
+    ["wix", "Wix", "https://mcp.wix.com/mcp"],
+  ];
+
   const presets = [
-    {
-      key: "github",
-      label: "GitHub",
-      icon: "github",
-      config: {
-        command: "npx",
-        args: ["-y", "@modelcontextprotocol/server-github"],
-        env: { GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_TOKEN}" },
-      },
-      secrets: [{ env: "GITHUB_TOKEN", label: "Personal Access Token" }],
-    },
-    {
-      key: "notion",
-      label: "Notion",
-      icon: "globe",
-      config: { type: "http", url: "https://mcp.notion.com/mcp" },
-      secrets: [],
-    },
-    {
-      key: "revenuecat",
-      label: "RevenueCat",
-      icon: "globe",
-      config: {
-        type: "http",
-        url: "https://mcp.revenuecat.ai/mcp",
-        headers: { Authorization: "Bearer ${REVENUECAT_API_KEY}" },
-      },
-      secrets: [{ env: "REVENUECAT_API_KEY", label: "API Key (v2)" }],
-    },
+    github,
+    ...hosted.map(([key, label, url, env, secretLabel]) => {
+      const config: Record<string, unknown> = { type: "http", url };
+      const secrets: { env: string; label: string }[] = [];
+      if (env) {
+        config.headers = { Authorization: "Bearer ${" + env + "}" };
+        secrets.push({ env, label: secretLabel ?? "API Key" });
+      }
+      return { key, label, icon: "globe", config, secrets };
+    }),
   ];
   for (const p of presets) {
     await pool.query(
       `INSERT INTO mcp_catalog (key, label, icon, config_json, secrets_json)
        VALUES ($1, $2, $3, $4, $5) ON CONFLICT (key) DO NOTHING`,
-      [p.key, p.label, p.icon, JSON.stringify(p.config), JSON.stringify(p.secrets)]
+      [
+        p.key,
+        p.label,
+        p.icon,
+        JSON.stringify(p.config),
+        JSON.stringify(p.secrets),
+      ],
     );
   }
 }

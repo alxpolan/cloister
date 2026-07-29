@@ -15,4 +15,5 @@ homes/*
 .DS_Store
 
 docs/LAUNCH.md
+docs/mac-release.md
 demo.tape
