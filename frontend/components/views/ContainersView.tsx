@@ -9,6 +9,7 @@ import {
   Trash2,
   Upload,
   CheckCircle2,
+  Boxes,
 } from "lucide-react";
 import {
   api,
@@ -116,6 +117,36 @@ export function ContainersView({
             onLogin={onLogin}
             onRefresh={onRefresh}
           />
+        ) : containers.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
+            <div className="text-neutral-300">
+              <Boxes size={44} strokeWidth={1.5} />
+            </div>
+            <div>
+              <p className="text-base font-semibold">Create your first container</p>
+              <p className="mt-1 max-w-sm text-sm text-neutral-500">
+                Each container is an isolated cell for one company — its own Claude
+                Code / Codex login, MCP servers and secrets.
+              </p>
+            </div>
+            <ol className="max-w-sm space-y-1 text-left text-xs text-neutral-500">
+              <li>
+                <span className="font-medium text-neutral-700">1.</span> Create a
+                container (name + slug).
+              </li>
+              <li>
+                <span className="font-medium text-neutral-700">2.</span> Start it,
+                then log in Claude Code / Codex.
+              </li>
+              <li>
+                <span className="font-medium text-neutral-700">3.</span> Tick the MCP
+                servers it should have.
+              </li>
+            </ol>
+            <Button variant="primary" onClick={onNew}>
+              <Plus size={14} /> New container
+            </Button>
+          </div>
         ) : (
           <EmptyState
             icon={<Terminal size={40} strokeWidth={1.5} />}
@@ -584,8 +615,12 @@ function SettingsTab({
   async function pickIcon(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const buf = await file.arrayBuffer();
-    const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+    const buf = new Uint8Array(await file.arrayBuffer());
+    let bin = "";
+    for (let i = 0; i < buf.length; i += 0x8000) {
+      bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+    }
+    const b64 = btoa(bin);
     await api.uploadIcon(container.id, b64, file.type);
     onDone();
   }

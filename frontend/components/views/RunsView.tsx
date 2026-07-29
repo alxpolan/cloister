@@ -105,7 +105,7 @@ export function RunsView() {
           <EmptyState
             icon={<ScrollText size={40} strokeWidth={1.5} />}
             title={selected ? "Loading…" : "Select a run"}
-            hint="Runs from /run, the agents CLI or Paperclip appear here."
+            hint="Agent runs triggered through the API appear here."
           />
         ) : (
           <div className="flex h-full flex-col p-8">

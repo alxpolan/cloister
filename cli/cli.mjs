@@ -28,7 +28,7 @@ function docker(args, opts = {}) {
 function requireDocker() {
   const r = docker(["info"], { stdio: "ignore" });
   if (r.status !== 0) {
-    console.error("Docker is not reachable. Is the daemon running?");
+    console.error("Docker is not reachable. Start Docker (Desktop / OrbStack) and try again.");
     process.exit(1);
   }
 }
@@ -78,7 +78,7 @@ function ensureRunning(company) {
 function printList() {
   const rows = listContainers();
   if (rows.length === 0) {
-    console.log("No agent containers yet. Create one in the dashboard.");
+    console.log("No containers yet. Create one in the dashboard at http://localhost:3000.");
     return;
   }
   const width = Math.max(...rows.map((r) => r.company.length), 7);
@@ -202,6 +202,12 @@ function compose(ctx, args, envExtra = {}) {
   });
 }
 
+function failStart() {
+  console.error("\nFailed to start the stack. If a port is already in use (3000, 8080 or 5433),");
+  console.error("free it or stop the conflicting service, then run 'cloister up' again.");
+  process.exit(1);
+}
+
 function stackUp() {
   requireDocker();
   const ctx = stackCtx();
@@ -215,20 +221,30 @@ function stackUp() {
       { cwd: REPO, stdio: ["ignore", "ignore", "inherit"] });
     if (build.status !== 0) process.exit(build.status ?? 1);
     console.error("→ starting Postgres, backend and dashboard…");
-    if (compose(ctx, ["up", "-d", "--build"], composeEnv).status !== 0) process.exit(1);
+    if (compose(ctx, ["up", "-d", "--build"], composeEnv).status !== 0) return failStart();
   } else {
     console.error("→ pulling the agent base image…");
     docker(["pull", `ghcr.io/${OWNER}/cloister-agent-base:latest`], { stdio: "inherit" });
     console.error("→ pulling and starting Postgres, backend and dashboard…");
-    if (compose(ctx, ["up", "-d", "--pull", "always"], composeEnv).status !== 0) process.exit(1);
+    if (compose(ctx, ["up", "-d", "--pull", "always"], composeEnv).status !== 0) return failStart();
   }
 
   process.stderr.write("→ waiting for the dashboard…");
+  let ready = false;
   for (let i = 0; i < 60; i++) {
-    if (spawnSync("curl", ["-s", "--max-time", "2", "-o", "/dev/null", "http://localhost:3000"]).status === 0) break;
+    if (spawnSync("curl", ["-s", "--max-time", "2", "-o", "/dev/null", "http://localhost:3000"]).status === 0) { ready = true; break; }
     process.stderr.write(".");
     spawnSync("sleep", ["2"]);
   }
+
+  if (!ready) {
+    console.error(" not up yet.\n");
+    console.error("  The dashboard didn't respond on http://localhost:3000 within ~2 min.");
+    console.error("  Run 'cloister status' to check the services — a port conflict on 3000/8080/5433");
+    console.error("  or a slow first image pull is the usual cause.\n");
+    process.exit(1);
+  }
+
   console.error(" ready\n");
   console.log("  Cloister is running.\n");
   console.log("  Dashboard   http://localhost:3000");
@@ -327,7 +343,7 @@ function main() {
 
   if (cmd === "here") {
     const company = rest[0];
-    if (!company) return console.error("usage: agents here <company> [claude|codex] [-- args]");
+    if (!company) return console.error("usage: cloister here <company> [claude|codex] [-- args]");
     let cli = "claude";
     let extra = rest.slice(1);
     if (extra[0] === "claude" || extra[0] === "codex") {
@@ -340,11 +356,11 @@ function main() {
 
   if (cmd === "up") {
     ensureRunning(rest[0]);
-    return console.log(`agent-${rest[0]} is running.`);
+    return console.log(`${rest[0]} is running.`);
   }
   if (cmd === "down") {
     docker(["stop", `${PREFIX}${rest[0]}`], { stdio: "ignore" });
-    return console.log(`agent-${rest[0]} stopped.`);
+    return console.log(`${rest[0]} stopped.`);
   }
 
   // default: `ac <company> [claude|codex] [-- extra args]`

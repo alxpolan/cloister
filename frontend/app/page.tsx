@@ -111,7 +111,7 @@ export default function App() {
         ))}
         <div className="mt-auto px-2 text-[11px] text-neutral-400">
           <p>
-            Manage from here or the <span className="font-mono">agents</span>{" "}
+            Manage from here or the <span className="font-mono">cloister</span>{" "}
             CLI.
           </p>
         </div>

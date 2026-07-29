@@ -16,12 +16,16 @@ import { McpFavicon } from "@/components/McpIcon";
 export function CatalogView() {
   const [entries, setEntries] = useState<CatalogEntry[]>([]);
   const [adding, setAdding] = useState(false);
+  const [err, setErr] = useState(false);
 
   const refresh = () =>
     api
       .listCatalog()
-      .then(setEntries)
-      .catch(() => {});
+      .then((e) => {
+        setEntries(e);
+        setErr(false);
+      })
+      .catch(() => setErr(true));
   useEffect(() => {
     refresh();
   }, []);
@@ -50,7 +54,13 @@ export function CatalogView() {
       )}
 
       <Panel>
-        {entries.length === 0 ? (
+        {err ? (
+          <EmptyState
+            icon={<Plus size={32} />}
+            title="Can't reach the backend"
+            hint="It may still be starting — give it a moment and refresh."
+          />
+        ) : entries.length === 0 ? (
           <EmptyState icon={<Plus size={32} />} title="Catalog is empty" />
         ) : (
           <div className="divide-y divide-neutral-100">
