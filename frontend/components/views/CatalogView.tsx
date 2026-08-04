@@ -31,7 +31,8 @@ export function CatalogView() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-3xl px-8 py-6">
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-3xl px-8 py-6">
       <div className="mb-5 flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold">MCP Catalog</h1>
@@ -95,6 +96,7 @@ export function CatalogView() {
           </div>
         )}
       </Panel>
+      </div>
     </div>
   );
 }

@@ -36,7 +36,8 @@ export function SecretsView() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-8 py-6">
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-3xl px-8 py-6">
       <div className="mb-5">
         <h1 className="text-lg font-semibold">Secrets</h1>
         <p className="text-xs text-neutral-400">
@@ -95,6 +96,7 @@ export function SecretsView() {
           </div>
         )}
       </Panel>
+      </div>
     </div>
   );
 }
