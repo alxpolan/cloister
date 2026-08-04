@@ -108,10 +108,10 @@ export interface RunRow {
 }
 
 async function seedCatalog(): Promise<void> {
-  const { rows } = await pool.query(
-    "SELECT count(*)::int AS n FROM mcp_catalog",
-  );
-  if (rows[0].n > 0) return;
+  // Runs on every startup. The inserts below use ON CONFLICT (key) DO NOTHING,
+  // so this backfills newly-added default servers on upgrade without touching
+  // ones already present — no wipe needed. (A default the user deletes will
+  // come back on the next restart, which is the trade-off for auto-backfill.)
   // GitHub ships as the official stdio server (needs a PAT). Everything else is a
   // hosted remote endpoint wrapped via mcp-remote. Every URL below was reachability-
   // checked. OAuth servers need no secret — the dashboard drives the login flow;
